@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { TrendingUp } from "lucide-react";
 import { useTradingStore } from "@/stores/useTradingStore";
+import { UserButton } from "@clerk/nextjs";
 
 function formatPrice(value: number): string {
   return value.toLocaleString("en-US", {
@@ -96,6 +97,15 @@ export default function Topbar() {
               {formatPrice(currentLivePrice + 15.5)}
             </span>
           </button>
+          {/* Di dalam return Topbar, di bagian paling kanan dekat tombol */}
+          <div className="flex items-center gap-2">
+            {/* Tombol Sell & Buy kamu tetap di sini ... */}
+            
+            {/* 🔥 Avatar User & Menu Logout Otomatis dari Clerk */}
+            <div className="ml-2 border-l border-[#2a2e39] pl-3 h-6 flex items-center">
+              <UserButton afterSignOutUrl="/" />
+            </div>
+          </div>
         </div>
       </div>
     </header>

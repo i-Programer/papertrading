@@ -24,6 +24,7 @@ interface TradingState {
   executeTradeLocal: (side: TradeSide, quantity: number, price: number) => boolean;
   updateLivePrices: (currentPrice: number) => void;
   resetAccount: () => void;
+  syncProfile: (name: string, email: string) => void;
 }
 
 const defaultProfile: UserProfile = {
@@ -53,6 +54,20 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setPositions: (positions) => set({ positions }),
   setTradeHistory: (history) => set({ tradeHistory: history }),
   setLoading: (isLoading) => set({ isLoading }),
+
+  syncProfile: (name, email) => {
+    const { profile } = get();
+    // Hanya update jika datanya berbeda untuk menghindari kelesuan re-render
+    if (profile.name !== name || profile.email !== email) {
+      set({
+        profile: {
+          id: name === "Guest User" ? "demo-user" : "clerk-user",
+          name,
+          email,
+        },
+      });
+    }
+  },
 
   executeTradeLocal: (side, quantity, price) => {
     const { symbol, balance, positions, tradeHistory } = get();
