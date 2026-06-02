@@ -103,7 +103,7 @@ export default function Topbar() {
             
             {/* 🔥 Avatar User & Menu Logout Otomatis dari Clerk */}
             <div className="ml-2 border-l border-[#2a2e39] pl-3 h-6 flex items-center">
-              <UserButton afterSignOutUrl="/" />
+              <UserButton />
             </div>
           </div>
         </div>
