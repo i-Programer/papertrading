@@ -1,7 +1,7 @@
 // src/components/Topbar.tsx
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { TrendingUp } from "lucide-react";
 import { useTradingStore } from "@/stores/useTradingStore";
 import { UserButton } from "@clerk/nextjs";
@@ -15,20 +15,53 @@ function formatPrice(value: number): string {
 
 export default function Topbar() {
   const symbol = useTradingStore((state) => state.symbol);
-  const positions = useTradingStore((state) => state.positions);
   const executeTradeWithDB = useTradingStore((state) => state.executeTradeWithDB);
 
   const [quantity, setQuantity] = useState<number>(0.1);
+  // 🔥 State baru untuk menangkap harga live dari Coinbase khusus untuk komponen Topbar
+  const [currentLivePrice, setCurrentLivePrice] = useState<number>(67000.0);
 
-  const activePosition = positions.find((p) => p.symbol === symbol);
-  const currentLivePrice = activePosition?.currentPrice || 67842.5; 
+  // 🔥 Efek untuk mendengarkan WebSocket Coinbase secara independen agar harga di tombol selalu jalan
+  useEffect(() => {
+    const ws = new WebSocket("wss://ws-feed.exchange.coinbase.com");
+
+    ws.onopen = () => {
+      ws.send(
+        JSON.stringify({
+          type: "subscribe",
+          product_ids: [symbol],
+          channels: ["ticker"],
+        })
+      );
+    };
+
+    ws.onmessage = (event) => {
+      const message = JSON.parse(event.data);
+      if (message.type === "ticker" && message.price) {
+        setCurrentLivePrice(parseFloat(message.price));
+      }
+    };
+
+    return () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: "unsubscribe",
+            product_ids: [symbol],
+            channels: ["ticker"],
+          })
+        );
+      }
+      ws.close();
+    };
+  }, [symbol]);
 
   const handleBuy = () => {
     if (quantity <= 0 || isNaN(quantity)) {
       alert("Masukkan jumlah kuantitas yang valid!");
       return;
     }
-    executeTradeWithDB("BUY", quantity, currentLivePrice); // 🔥 Ubah di sini
+    executeTradeWithDB("BUY", quantity, currentLivePrice);
   };
 
   const handleSell = () => {
@@ -36,7 +69,7 @@ export default function Topbar() {
       alert("Masukkan jumlah kuantitas yang valid!");
       return;
     }
-    executeTradeWithDB("SELL", quantity, currentLivePrice); // 🔥 Ubah di sini
+    executeTradeWithDB("SELL", quantity, currentLivePrice);
   };
 
   return (
@@ -94,17 +127,13 @@ export default function Topbar() {
               Buy
             </span>
             <span className="text-sm font-semibold tabular-nums">
-              {formatPrice(currentLivePrice + 15.5)}
+              {/* Diubah menjadi harga real tanpa spread hardcode berlebih */}
+              {formatPrice(currentLivePrice)}
             </span>
           </button>
-          {/* Di dalam return Topbar, di bagian paling kanan dekat tombol */}
-          <div className="flex items-center gap-2">
-            {/* Tombol Sell & Buy kamu tetap di sini ... */}
-            
-            {/* 🔥 Avatar User & Menu Logout Otomatis dari Clerk */}
-            <div className="ml-2 border-l border-[#2a2e39] pl-3 h-6 flex items-center">
-              <UserButton />
-            </div>
+
+          <div className="ml-2 border-l border-[#2a2e39] pl-3 h-6 flex items-center">
+            <UserButton />
           </div>
         </div>
       </div>

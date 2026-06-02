@@ -6,6 +6,8 @@ import { createChart, IChartApi, ISeriesApi, CandlestickSeries } from "lightweig
 import { useTradingStore } from "@/stores/useTradingStore";
 
 export default function ChartArea() {
+  // Pastikan format symbol yang di-store sesuai dengan Coinbase (misal: BTC-USD)
+  // Jika store kamu masih menyimpan format BTCUSDT, kamu perlu menambahkan logic helper untuk mengubahnya menjadi BTC-USD
   const symbol = useTradingStore((state) => state.symbol);
   const chartContainerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<IChartApi | null>(null);
@@ -56,51 +58,84 @@ export default function ChartArea() {
     };
     window.addEventListener("resize", handleResize);
 
-    // Fetch Data Historis Binance REST API
+    // Fetch Data Historis Coinbase REST API
+    // Catatan: Coinbase mengembalikan data dari yang terbaru ke terlama, jadi kita perlu .reverse() untuk lightweight-charts
     const fetchHistoricalData = async () => {
       try {
+        // 1800 detik = 30 menit (granularity Coinbase menggunakan satuan detik)
         const response = await fetch(
-          `https://api.binance.com/api/v3/klines?symbol=${symbol}&interval=30m&limit=500`
+          `https://api.exchange.coinbase.com/products/${symbol}/candles?granularity=60&limit=500`
         );
         const rawData = await response.json();
+        
+        // Format Coinbase candle array: [time, low, high, open, close, volume]
         const formattedData = rawData.map((d: any) => ({
-          time: d[0] / 1000,
-          open: parseFloat(d[1]),
+          time: d[0], // Sudah dalam bentuk Unix timestamp (detik)
+          low: parseFloat(d[1]),
           high: parseFloat(d[2]),
-          low: parseFloat(d[3]),
+          open: parseFloat(d[3]),
           close: parseFloat(d[4]),
-        }));
+        })).reverse(); // Balik urutan agar kronologis (lampau -> sekarang)
+
         candlestickSeries.setData(formattedData);
       } catch (error) {
-        console.error(`Gagal mengambil data historis untuk ${symbol}:`, error);
+        console.error(`Gagal mengambil data historis Coinbase untuk ${symbol}:`, error);
       }
     };
 
     fetchHistoricalData();
 
-    // Koneksi WebSocket Real-time Stream
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_30m`);
+    // Koneksi WebSocket Real-time Stream Coinbase
+    const ws = new WebSocket("wss://ws-feed.exchange.coinbase.com");
+
+    ws.onopen = () => {
+      // Mengirimkan payload subscribe setelah koneksi terbuka
+      const subscribePayload = {
+        type: "subscribe",
+        product_ids: [symbol],
+        channels: ["ticker"] // Menggunakan channel ticker untuk memantau harga live paling update
+      };
+      ws.send(JSON.stringify(subscribePayload));
+    };
 
     ws.onmessage = (event) => {
       const message = JSON.parse(event.data);
-      const kline = message.k;
 
-      if (kline) {
+      // Pastikan tipe data sesuai dan datanya valid
+      if (message.type === "ticker" && message.price) {
+        const livePrice = parseFloat(message.price);
+        const liveTime = new Date(message.time).getTime() / 1000;
+
+        // Mendapatkan candle 30 menit saat ini berdasarkan pembulatan waktu ke bawah
+        const candleTime = Math.floor(liveTime / 1800) * 1800;
+
         const priceTick = {
-          time: kline.t / 1000,
-          open: parseFloat(kline.o),
-          high: parseFloat(kline.h),
-          low: parseFloat(kline.l),
-          close: parseFloat(kline.c),
+          time: candleTime,
+          open: livePrice,  // Menggunakan pendekatan update dinamis lightweight-charts
+          high: livePrice,
+          low: livePrice,
+          close: livePrice,
         };
+
+        // Meng-update grafik secara real-time
         candlestickSeries.update(priceTick);
-        useTradingStore.getState().updateLivePrices(priceTick.close);
+        useTradingStore.getState().updateLivePrices(livePrice);
       }
     };
 
     // Cleanup saat pindah koin / unmount
     return () => {
       window.removeEventListener("resize", handleResize);
+      
+      // Mengirim unsubscribe payload sebelum menutup koneksi (Good Practice)
+      if (ws.readyState === WebSocket.OPEN) {
+        const unsubscribePayload = {
+          type: "unsubscribe",
+          product_ids: [symbol],
+          channels: ["ticker"]
+        };
+        ws.send(JSON.stringify(unsubscribePayload));
+      }
       ws.close();
       chart.remove();
     };

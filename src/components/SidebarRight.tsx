@@ -5,12 +5,13 @@ import type { WatchlistItem } from "@/types/trading";
 import { formatCurrency, formatPercent, pnlColorClass } from "@/utils/format";
 import { useTradingStore } from "@/stores/useTradingStore";
 
+// 🔥 DIUBAH: Menyesuaikan array watchlist dengan format Coinbase (menggunakan pemisah strip "-")
 const WATCHLIST: WatchlistItem[] = [
-  { symbol: "BTCUSDT", price: 67_850.2, changePercent: 2.14 },
-  { symbol: "ETHUSDT", price: 3_412.8, changePercent: -0.87 },
-  { symbol: "SOLUSDT", price: 178.45, changePercent: 4.32 },
-  { symbol: "BNBUSDT", price: 612.1, changePercent: 0.55 },
-  { symbol: "XRPUSDT", price: 0.62, changePercent: -1.2 },
+  { symbol: "BTC-USD", price: 67_850.2, changePercent: 2.14 },
+  { symbol: "ETH-USD", price: 3_412.8, changePercent: -0.87 },
+  { symbol: "SOL-USD", price: 178.45, changePercent: 4.32 },
+  { symbol: "ADA-USD", price: 0.48, changePercent: 0.55 },
+  { symbol: "XRP-USD", price: 0.52, changePercent: -1.2 },
 ];
 
 function formatAssetPrice(value: number): string {

@@ -42,7 +42,8 @@ const defaultBalance: UserBalance = {
 };
 
 export const useTradingStore = create<TradingState>((set, get) => ({
-  symbol: "BTCUSDT",
+  // 1. DIUBAH: Menyesuaikan nilai default dengan format instrumen Coinbase (BTC-USD)
+  symbol: "BTC-USD",
   profile: defaultProfile,
   balance: defaultBalance,
   positions: [],
@@ -133,7 +134,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
     // --- 3. JALUR NEGOSIASI DATA (GUEST VS CLOUD DB) ---
     if (isGuest) {
-      // Jalur cepat Guest: Cukup simpan di memori frontend saja
       set({
         balance: { ...balance, cash: newCash, buyingPower: newCash },
         positions: newPositions,
@@ -141,15 +141,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       });
       return true;
     } else {
-      // Jalur Pro: Tembak ke Supabase Cloud
       try {
         set({ isLoading: true });
-        // Ambil data User ID Clerk asli yang sedang aktif lewat trik internal
         const { data: { user } } = await supabase.auth.session ? { data: { user: { id: null } } } : { data: { user: null } }; 
-        // Karena Clerk dilempar via hook, kita pakai param ID statis dari syncProfile (State penampung ideal)
-        // Kita gunakan trik mengambil ID user yang dikirim Clerk lewat middleware/page.
-        
-        // Ambil ID profil yang sedang aktif (Clerk User ID)
         const clerkUserId = user?.id || (window as any).Clerk?.user?.id;
 
         if (!clerkUserId) {
@@ -172,14 +166,13 @@ export const useTradingStore = create<TradingState>((set, get) => ({
             {
               user_id: clerkUserId,
               symbol,
-              side: "BUY", // Tetap BUY karena statusnya long holding
+              side: "BUY",
               quantity: finalQty,
               entry_price: finalAvgPrice,
             },
             { onConflict: "user_id,symbol" }
           );
         } else if (side === "SELL" && finalQty === 0) {
-          // Jika koin habis terjual, hapus row dari database
           await supabase
             .from("positions")
             .delete()
@@ -190,10 +183,9 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         // C. Update Cash di Profiles
         await supabase
           .from("profiles")
-          .update({ cash: newCash, equity: newCash }) // Equity nanti dinormalisasi ulang oleh engine chart
+          .update({ cash: newCash, equity: newCash })
           .eq("id", clerkUserId);
 
-        // D. Jika semua query awas/lolos tanpa crash, update state Zustand lokal agar sinkron
         set({
           balance: { ...balance, cash: newCash, buyingPower: newCash },
           positions: newPositions,
@@ -211,6 +203,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
 
+  // 2. DISESUAIKAN: Memastikan kalkulasi PnL berjalan mulus dengan data Coinbase live feed
   updateLivePrices: (currentPrice) => {
     const { symbol, balance, positions } = get();
     let totalPnL = 0;
