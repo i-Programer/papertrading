@@ -1,6 +1,6 @@
 // src/stores/useTradingStore.ts
-
 import { create } from "zustand";
+import { supabase } from "@/utils/supabase";
 import type {
   Position,
   TradeHistory,
@@ -21,16 +21,16 @@ interface TradingState {
   setPositions: (positions: Position[]) => void;
   setTradeHistory: (history: TradeHistory[]) => void;
   setLoading: (loading: boolean) => void;
-  executeTradeLocal: (side: TradeSide, quantity: number, price: number) => boolean;
+  syncProfile: (name: string, email: string) => void;
+  executeTradeWithDB: (side: TradeSide, quantity: number, price: number) => Promise<boolean>;
   updateLivePrices: (currentPrice: number) => void;
   resetAccount: () => void;
-  syncProfile: (name: string, email: string) => void;
 }
 
 const defaultProfile: UserProfile = {
   id: "demo-user",
-  name: "Paper Trader",
-  email: "demo@papertrading.local",
+  name: "Guest User",
+  email: "guest@papertrading.local",
 };
 
 const defaultBalance: UserBalance = {
@@ -57,7 +57,6 @@ export const useTradingStore = create<TradingState>((set, get) => ({
 
   syncProfile: (name, email) => {
     const { profile } = get();
-    // Hanya update jika datanya berbeda untuk menghindari kelesuan re-render
     if (profile.name !== name || profile.email !== email) {
       set({
         profile: {
@@ -69,38 +68,38 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
 
-  executeTradeLocal: (side, quantity, price) => {
-    const { symbol, balance, positions, tradeHistory } = get();
+  executeTradeWithDB: async (side, quantity, price) => {
+    const { symbol, balance, positions, tradeHistory, profile } = get();
+    const isGuest = profile.id === "demo-user";
     const totalCost = quantity * price;
 
+    // --- 1. VALIDASI SALDO & KEPEMILIKAN ---
     if (side === "BUY" && balance.cash < totalCost) {
       alert("⚠️ Transaksi Gagal: Saldo Virtual Cash Tidak Cukup!");
       return false;
     }
 
     const existingPosition = positions.find((p) => p.symbol === symbol);
-    if (side === "SELL") {
-      if (!existingPosition || existingPosition.quantity < quantity) {
-        alert("⚠️ Transaksi Gagal: Anda tidak memiliki cukup aset untuk dijual!");
-        return false;
-      }
+    if (side === "SELL" && (!existingPosition || existingPosition.quantity < quantity)) {
+      alert("⚠️ Transaksi Gagal: Anda tidak memiliki cukup aset untuk dijual!");
+      return false;
     }
 
+    // --- 2. KALKULASI LOGIKA TRADING ---
     const newCash = side === "BUY" ? balance.cash - totalCost : balance.cash + totalCost;
     let newPositions = [...positions];
+    let finalQty = quantity;
+    let finalAvgPrice = price;
 
     if (side === "BUY") {
       if (existingPosition) {
-        const newQuantity = existingPosition.quantity + quantity;
-        const newAvgPrice = ((existingPosition.entryPrice * existingPosition.quantity) + totalCost) / newQuantity;
-        
+        finalQty = existingPosition.quantity + quantity;
+        finalAvgPrice = ((existingPosition.entryPrice * existingPosition.quantity) + totalCost) / finalQty;
         newPositions = positions.map((p) =>
-          p.symbol === symbol
-            ? { ...p, quantity: newQuantity, entryPrice: newAvgPrice }
-            : p
+          p.symbol === symbol ? { ...p, quantity: finalQty, entryPrice: finalAvgPrice } : p
         );
       } else {
-        const newPos: Position = {
+        newPositions.push({
           id: Math.random().toString(36).substring(7),
           symbol,
           side: "BUY",
@@ -108,17 +107,17 @@ export const useTradingStore = create<TradingState>((set, get) => ({
           entryPrice: price,
           currentPrice: price,
           pnl: 0,
-        };
-        newPositions.push(newPos);
+        });
       }
     } else if (side === "SELL" && existingPosition) {
-      const newQuantity = existingPosition.quantity - quantity;
-      
-      if (newQuantity === 0) {
+      finalQty = existingPosition.quantity - quantity;
+      finalAvgPrice = existingPosition.entryPrice;
+
+      if (finalQty === 0) {
         newPositions = positions.filter((p) => p.symbol !== symbol);
       } else {
         newPositions = positions.map((p) =>
-          p.symbol === symbol ? { ...p, quantity: newQuantity } : p
+          p.symbol === symbol ? { ...p, quantity: finalQty } : p
         );
       }
     }
@@ -132,17 +131,84 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       timestamp: new Date().toLocaleTimeString(),
     };
 
-    set({
-      balance: {
-        ...balance,
-        cash: newCash,
-        buyingPower: newCash,
-      },
-      positions: newPositions,
-      tradeHistory: [newLog, ...tradeHistory],
-    });
+    // --- 3. JALUR NEGOSIASI DATA (GUEST VS CLOUD DB) ---
+    if (isGuest) {
+      // Jalur cepat Guest: Cukup simpan di memori frontend saja
+      set({
+        balance: { ...balance, cash: newCash, buyingPower: newCash },
+        positions: newPositions,
+        tradeHistory: [newLog, ...tradeHistory],
+      });
+      return true;
+    } else {
+      // Jalur Pro: Tembak ke Supabase Cloud
+      try {
+        set({ isLoading: true });
+        // Ambil data User ID Clerk asli yang sedang aktif lewat trik internal
+        const { data: { user } } = await supabase.auth.session ? { data: { user: { id: null } } } : { data: { user: null } }; 
+        // Karena Clerk dilempar via hook, kita pakai param ID statis dari syncProfile (State penampung ideal)
+        // Kita gunakan trik mengambil ID user yang dikirim Clerk lewat middleware/page.
+        
+        // Ambil ID profil yang sedang aktif (Clerk User ID)
+        const clerkUserId = user?.id || (window as any).Clerk?.user?.id;
 
-    return true;
+        if (!clerkUserId) {
+          alert("Sesi login terputus, silakan refresh halaman.");
+          return false;
+        }
+
+        // A. Insert History Log
+        await supabase.from("trade_history").insert({
+          user_id: clerkUserId,
+          symbol,
+          side,
+          quantity,
+          price,
+        });
+
+        // B. Upsert Positions
+        if (side === "BUY" || (side === "SELL" && finalQty > 0)) {
+          await supabase.from("positions").upsert(
+            {
+              user_id: clerkUserId,
+              symbol,
+              side: "BUY", // Tetap BUY karena statusnya long holding
+              quantity: finalQty,
+              entry_price: finalAvgPrice,
+            },
+            { onConflict: "user_id,symbol" }
+          );
+        } else if (side === "SELL" && finalQty === 0) {
+          // Jika koin habis terjual, hapus row dari database
+          await supabase
+            .from("positions")
+            .delete()
+            .eq("user_id", clerkUserId)
+            .eq("symbol", symbol);
+        }
+
+        // C. Update Cash di Profiles
+        await supabase
+          .from("profiles")
+          .update({ cash: newCash, equity: newCash }) // Equity nanti dinormalisasi ulang oleh engine chart
+          .eq("id", clerkUserId);
+
+        // D. Jika semua query awas/lolos tanpa crash, update state Zustand lokal agar sinkron
+        set({
+          balance: { ...balance, cash: newCash, buyingPower: newCash },
+          positions: newPositions,
+          tradeHistory: [newLog, ...tradeHistory],
+        });
+
+        return true;
+      } catch (err) {
+        console.error("Database Transaction Error:", err);
+        alert("Terjadi kendala jaringan saat menyimpan transaksi.");
+        return false;
+      } finally {
+        set({ isLoading: false });
+      }
+    }
   },
 
   updateLivePrices: (currentPrice) => {

@@ -16,7 +16,7 @@ function formatPrice(value: number): string {
 export default function Topbar() {
   const symbol = useTradingStore((state) => state.symbol);
   const positions = useTradingStore((state) => state.positions);
-  const executeTradeLocal = useTradingStore((state) => state.executeTradeLocal);
+  const executeTradeWithDB = useTradingStore((state) => state.executeTradeWithDB);
 
   const [quantity, setQuantity] = useState<number>(0.1);
 
@@ -28,7 +28,7 @@ export default function Topbar() {
       alert("Masukkan jumlah kuantitas yang valid!");
       return;
     }
-    executeTradeLocal("BUY", quantity, currentLivePrice);
+    executeTradeWithDB("BUY", quantity, currentLivePrice); // 🔥 Ubah di sini
   };
 
   const handleSell = () => {
@@ -36,7 +36,7 @@ export default function Topbar() {
       alert("Masukkan jumlah kuantitas yang valid!");
       return;
     }
-    executeTradeLocal("SELL", quantity, currentLivePrice);
+    executeTradeWithDB("SELL", quantity, currentLivePrice); // 🔥 Ubah di sini
   };
 
   return (
