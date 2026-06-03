@@ -9,6 +9,7 @@ import Topbar from "@/components/Topbar";
 import ChartArea from "@/components/ChartArea";
 import SidebarRight from "@/components/SidebarRight";
 import TradingPanel from "@/components/TradingPanel";
+import OrderPanel from "@/components/OrderPanel";
 
 export default function Home() {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -71,6 +72,7 @@ export default function Home() {
           />
         </div>
 
+        <OrderPanel />
         <SidebarRight />
       </div>
     </div>

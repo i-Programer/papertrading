@@ -1,6 +1,7 @@
 // src/stores/useTradingStore.ts
 import { create } from "zustand";
 import { supabase } from "@/utils/supabase";
+import { throttle } from 'lodash';
 import type {
   Position,
   TradeHistory,
@@ -11,12 +12,14 @@ import type {
 
 interface TradingState {
   symbol: string;
+  interval: string;
   profile: UserProfile;
   balance: UserBalance;
   positions: Position[];
   tradeHistory: TradeHistory[];
   isLoading: boolean;
   setSymbol: (symbol: string) => void;
+  setInterval: (interval: string) => void;
   setBalance: (balance: UserBalance) => void;
   setPositions: (positions: Position[]) => void;
   setTradeHistory: (history: TradeHistory[]) => void;
@@ -44,6 +47,7 @@ const defaultBalance: UserBalance = {
 export const useTradingStore = create<TradingState>((set, get) => ({
   // 1. DIUBAH: Menyesuaikan nilai default dengan format instrumen Coinbase (BTC-USD)
   symbol: "BTC-USD",
+  interval: "15m",
   profile: defaultProfile,
   balance: defaultBalance,
   positions: [],
@@ -51,6 +55,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   isLoading: false,
 
   setSymbol: (symbol) => set({ symbol }),
+  setInterval: (interval) => set({ interval }),
   setBalance: (balance) => set({ balance }),
   setPositions: (positions) => set({ positions }),
   setTradeHistory: (history) => set({ tradeHistory: history }),
