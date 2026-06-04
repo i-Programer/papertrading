@@ -15,10 +15,10 @@ export default function PortfolioPage() {
 
   return (
     <div className="min-h-screen bg-[#131722] text-[#d1d4dc] p-6 select-none">
-      {/* Header Navigasi */}
+      {/* Navigation Header */}
       <div className="max-w-6xl mx-auto flex items-center justify-between mb-8">
         <Link href="/trade" className="flex items-center gap-2 text-sm font-semibold text-[#2962ff] hover:text-[#1e53e5] transition-colors">
-          <ArrowLeft className="h-4 w-4" /> Kembali ke Ruang Trade
+          <ArrowLeft className="h-4 w-4" /> Back to Trading Room
         </Link>
         <div className="text-right">
           <h1 className="text-lg font-bold text-white">{profile.name}</h1>
@@ -50,7 +50,7 @@ export default function PortfolioPage() {
         </div>
 
         {/* Card 3: Active Assets Count */}
-        <div className="bg-[#1c2030] p-5 rounded-lg border border-[#2a2e39] flex items-center gap-4">
+        <div className="bg-[#1c2030} p-5 rounded-lg border border-[#2a2e39] flex items-center gap-4">
           <div className="p-3 bg-[#ef5350]/10 rounded-full text-[#ef5350]">
             <History className="h-6 w-6" />
           </div>
@@ -61,7 +61,7 @@ export default function PortfolioPage() {
         </div>
       </div>
 
-      {/* Histori Transaksi */}
+      {/* Transaction History */}
       <div className="max-w-6xl mx-auto bg-[#1c2030] rounded-lg border border-[#2a2e39] p-5">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-white mb-4 flex items-center gap-2">
           <History className="h-4 w-4 text-[#787b86]" /> Trade History Log
@@ -83,7 +83,7 @@ export default function PortfolioPage() {
               {tradeHistory.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="py-8 text-center text-[#434651]">
-                    Belum ada riwayat transaksi di PC baru ini. Mulai trading untuk mengisi log!
+                    No transaction history on this new device. Start trading to fill the log!
                   </td>
                 </tr>
               ) : (
