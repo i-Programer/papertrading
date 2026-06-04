@@ -36,29 +36,37 @@ export default function SidebarRight() {
   const livePrice = activePosition?.currentPrice || 67000.0; // Default fallback
 
   // 1. Fetch semua produk/koin dari Coinbase API saat komponen di-mount
-  useEffect(() => {
-    const fetchCoinbaseProducts = async () => {
-      try {
-        setIsLoading(true);
-        const response = await fetch("https://api.exchange.coinbase.com/products");
-        const data: CoinbaseProduct[] = await response.json();
-        
-        // Filter hanya koin yang berpasangan dengan USD (bukan EUR, GBP, atau Crypto-to-Crypto)
-        // Dan urutkan secara alfabetis
-        const usdPairs = data
-          .filter((product) => product.quote_currency === "USD")
-          .sort((a, b) => a.base_currency.localeCompare(b.base_currency));
+// 1. Fetch semua produk/koin dari proxy backend saat komponen di-mount
+useEffect(() => {
+  const fetchCoinbaseProducts = async () => {
+    try {
+      setIsLoading(true);
+      
+      // Use your dynamic base variable setup
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+      
+      // Update this endpoint string to query your proxy backend
+      const response = await fetch(`${API_BASE}/api/products`);
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data: CoinbaseProduct[] = await response.json();
+      
+      // Filter hanya koin yang berpasangan dengan USD (bukan EUR, GBP, atau Crypto-to-Crypto)
+      // Dan urutkan secara alfabetis
+      const usdPairs = data
+        .filter((product) => product.quote_currency === "USD")
+        .sort((a, b) => a.base_currency.localeCompare(b.base_currency));
 
-        setAllProducts(usdPairs);
-      } catch (error) {
-        console.error("Gagal mengambil daftar koin dari Coinbase:", error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
+      setAllProducts(usdPairs);
+    } catch (error) {
+      console.error("Gagal mengambil daftar koin dari proxy:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
-    fetchCoinbaseProducts();
-  }, []);
+  fetchCoinbaseProducts();
+}, []);
 
   // 2. Filter list koin berdasarkan apa yang diketik user di Search Bar
   const filteredProducts = allProducts.filter((coin) =>
