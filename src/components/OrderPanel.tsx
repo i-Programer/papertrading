@@ -3,7 +3,7 @@
 
 import { useState, useEffect } from "react";
 import { useTradingStore } from "@/stores/useTradingStore";
-import { formatCurrency, pnlColorClass } from "@/utils/format";
+import { formatCurrency } from "@/utils/format";
 
 export default function OrderPanel() {
   const symbol = useTradingStore((state) => state.symbol);

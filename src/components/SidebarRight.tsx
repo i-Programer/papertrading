@@ -3,7 +3,6 @@
 
 import { useState, useEffect } from "react";
 import { Search, Loader2 } from "lucide-react";
-import { formatPercent, pnlColorClass } from "@/utils/format";
 import { useTradingStore } from "@/stores/useTradingStore";
 
 interface CoinbaseProduct {

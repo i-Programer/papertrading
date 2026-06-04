@@ -10,10 +10,66 @@ import {
   LineSeries,
   createSeriesMarkers,
   IChartApi,
-  ISeriesApi
+  ISeriesApi,
+  CandlestickData,
+  HistogramData,
+  LineData,
+  Time,
+  UTCTimestamp
 } from "lightweight-charts";
 import { useTradingStore } from "@/stores/useTradingStore";
 import { Loader2 } from "lucide-react";
+import { constants } from "fs/promises";
+
+// Define proper types
+interface CandleData {
+  time: UTCTimestamp;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+interface VolumeData {
+  time: UTCTimestamp;
+  value: number;
+  color: string;
+}
+
+interface MAData {
+  time: UTCTimestamp;
+  value: number;
+}
+
+interface EMAData {
+  time: UTCTimestamp;
+  value: number;
+}
+
+interface TradeHistoryItem {
+  id: string;
+  symbol: string;
+  side: "BUY" | "SELL";
+  quantity: number;
+  timestamp: string;
+}
+
+interface LegendData {
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+  ma50: string;
+  ema20: string;
+  isPriceUp: boolean;
+}
+
+interface WebSocketMessage {
+  type: string;
+  price?: string;
+  last_size?: string;
+}
 
 const CHART_PRESETS = [
   { label: "24H (5m)", rangeSeconds: 24 * 60 * 60, granularity: 300, description: "24 hours in 5 minute intervals" },
@@ -25,8 +81,8 @@ const CHART_PRESETS = [
   { label: "5Y (1W)", rangeSeconds: 5 * 365 * 24 * 60 * 60, granularity: 604800, description: "5 tahun dengan candle 1 minggu" }
 ];
 
-function calculateMA(data: any[], period: number) {
-  const maData = [];
+function calculateMA(data: CandleData[], period: number): MAData[] {
+  const maData: MAData[] = [];
   for (let i = 0; i < data.length; i++) {
     if (i < period - 1) continue;
     let sum = 0;
@@ -36,10 +92,10 @@ function calculateMA(data: any[], period: number) {
   return maData;
 }
 
-function calculateEMA(data: any[], period: number) {
-  const emaData = [];
+function calculateEMA(data: CandleData[], period: number): EMAData[] {
+  const emaData: EMAData[] = [];
   if (data.length < period) return [];
-  let k = 2 / (period + 1);
+  const k = 2 / (period + 1);
   let sum = 0;
   for (let i = 0; i < period; i++) sum += data[i].close;
   let prevEma = sum / period;
@@ -55,20 +111,20 @@ function calculateEMA(data: any[], period: number) {
 
 export default function ChartArea() {
   const symbol = useTradingStore((state) => state.symbol);
-  const tradeHistory = useTradingStore((state) => state.tradeHistory);
+  // const tradeHistory = useTradingStore((state) => state.tradeHistory) as TradeHistoryItem[];
   const [selectedPreset, setSelectedPreset] = useState(CHART_PRESETS[0]);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartLoading, setChartLoading] = useState(true);
 
-  const [legendData, setLegendData] = useState({
+  const [legendData, setLegendData] = useState<LegendData>({
     open: "-", high: "-", low: "-", close: "-", volume: "-", ma50: "-", ema20: "-", isPriceUp: true
   });
 
-  const lastValidDataRef = useRef<any>(null);
+  const lastValidDataRef = useRef<LegendData | null>(null);
   
   // 🔥 REFS UNTUK MENGHINDARI SIKLUS RE-RENDER YANG MERUSAK INSTANCE CHART
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const firstCandleTimeRef = useRef<number | null>(null);
+  const firstCandleTimeRef = useRef<UTCTimestamp | null>(null);
 
   // useEffect 1: Mengurus Rendering Dasar Chart & Data Historis (Hanya dipicu jika simbol atau preset berubah)
   useEffect(() => {
@@ -94,8 +150,8 @@ export default function ChartArea() {
       priceFormat: { type: "volume" }, priceScaleId: "volume-scale", title: " "
     });
 
-    const maSeries = chart.addSeries(LineSeries, { color: "#f5bc3f", lineWidth: 1.5, priceLineVisible: false, title: " " });
-    const emaSeries = chart.addSeries(LineSeries, { color: "#26c6da", lineWidth: 1.5, priceLineVisible: false, title: " " });
+    const maSeries = chart.addSeries(LineSeries, { color: "#f5bc3f", priceLineVisible: false, lineWidth: 1, title: " " });
+    const emaSeries = chart.addSeries(LineSeries, { color: "#26c6da", priceLineVisible: false, lineWidth: 1, title: " " });
 
     chart.priceScale("volume-scale").applyOptions({
       borderVisible: false, visible: false, scaleMargins: { top: 0.8, bottom: 0 },
@@ -103,8 +159,8 @@ export default function ChartArea() {
 
     const fetchHistory = async () => {
       try {
-        const now = Math.floor(Date.now() / 1000);
-        const startTime = now - selectedPreset.rangeSeconds;
+        const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
+        const startTime = (now - selectedPreset.rangeSeconds) as UTCTimestamp;
         const granularity = selectedPreset.granularity;
         const API_BASE_URL = process.env.NEXT_API_URL || 'http://localhost:5000';
 
@@ -113,23 +169,35 @@ export default function ChartArea() {
         );
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const rawData = await response.json();
+        const rawData: unknown[] = await response.json();
         if (!rawData || rawData.length === 0) {
           setChartLoading(false);
           return;
         }
 
-        const formattedCandles = rawData
-          .map((row: any) => ({ time: row[0], open: row[3], high: row[2], low: row[1], close: row[4] }))
-          .sort((a: any, b: any) => a.time - b.time);
+        const formattedCandles: CandleData[] = rawData
+          .map((row: unknown) => {
+            const rowArray = row as number[];
+            return {
+              time: rowArray[0] as UTCTimestamp,
+              open: rowArray[3],
+              high: rowArray[2],
+              low: rowArray[1],
+              close: rowArray[4]
+            };
+          })
+          .sort((a: CandleData, b: CandleData) => a.time - b.time);
 
-        const formattedVolume = rawData
-          .map((row: any) => ({
-            time: row[0],
-            value: row[5],
-            color: row[4] >= row[3] ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)",
-          }))
-          .sort((a: any, b: any) => a.time - b.time);
+        const formattedVolume: VolumeData[] = rawData
+          .map((row: unknown) => {
+            const rowArray = row as number[];
+            return {
+              time: rowArray[0] as UTCTimestamp,
+              value: rowArray[5],
+              color: rowArray[4] >= rowArray[3] ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)",
+            };
+          })
+          .sort((a: VolumeData, b: VolumeData) => a.time - b.time);
 
         if (formattedCandles.length > 0) {
           firstCandleTimeRef.current = formattedCandles[0].time;
@@ -151,7 +219,7 @@ export default function ChartArea() {
         const lastMa = ma50Data[ma50Data.length - 1];
         const lastEma = ema20Data[ema20Data.length - 1];
 
-        const initialLegend = {
+        const initialLegend: LegendData = {
           open: lastCandle.open.toFixed(2),
           high: lastCandle.high.toFixed(2),
           low: lastCandle.low.toFixed(2),
@@ -193,21 +261,22 @@ export default function ChartArea() {
         return;
       }
 
-      const candleData: any = param.seriesData.get(candleSeries);
-      const volData: any = param.seriesData.get(volumeSeries);
-      const maData: any = param.seriesData.get(maSeries);
-      const emaData: any = param.seriesData.get(emaSeries);
+      const candleData = param.seriesData.get(candleSeries) as CandlestickData<Time> | undefined;
+      const volData = param.seriesData.get(volumeSeries) as HistogramData<Time> | undefined;
+      const maData = param.seriesData.get(maSeries) as LineData<Time> | undefined;
+      const emaData = param.seriesData.get(emaSeries) as LineData<Time> | undefined;
 
-      if (candleData) {
+      if (candleData && 'open' in candleData && 'high' in candleData && 'low' in candleData && 'close' in candleData) {
+        const candle = candleData as CandlestickData<Time>;
         setLegendData({
-          open: candleData.open.toFixed(2),
-          high: candleData.high.toFixed(2),
-          low: candleData.low.toFixed(2),
-          close: candleData.close.toFixed(2),
-          volume: volData ? volData.value.toLocaleString("en-US", { maximumFractionDigits: 0 }) : "-",
-          ma50: maData ? maData.value.toFixed(2) : "-",
-          ema20: emaData ? emaData.value.toFixed(2) : "-",
-          isPriceUp: candleData.close >= candleData.open
+          open: (candle.open as number).toFixed(2),
+          high: (candle.high as number).toFixed(2),
+          low: (candle.low as number).toFixed(2),
+          close: (candle.close as number).toFixed(2),
+          volume: volData && 'value' in volData ? (volData.value as number).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "-",
+          ma50: maData && 'value' in maData ? (maData.value as number).toFixed(2) : "-",
+          ema20: emaData && 'value' in emaData ? (emaData.value as number).toFixed(2) : "-",
+          isPriceUp: (candle.close as number) >= (candle.open as number)
         });
       }
     });
@@ -220,11 +289,13 @@ export default function ChartArea() {
     };
 
     let lastCandleTime: number | null = null;
-    let lastOpen = 0; let lastHigh = 0; let lastLow = 0;
+    let lastOpen = 0;
+    let lastHigh = 0;
+    let lastLow = 0;
     let accumulatedVolume = 0;
 
     ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
+      const message: WebSocketMessage = JSON.parse(event.data);
       if (message.type === "ticker" && message.price) {
         const currentPrice = parseFloat(message.price);
         const currentVolume = parseFloat(message.last_size || "0");
@@ -239,15 +310,18 @@ export default function ChartArea() {
           lastHigh = Math.max(lastHigh, currentPrice);
           lastLow = Math.min(lastLow, currentPrice);
           accumulatedVolume += currentVolume; 
-          candleSeries.update({ time: candleTimeStamp, open: lastOpen, high: lastHigh, low: lastLow, close: currentPrice });
+          candleSeries.update({ time: candleTimeStamp as UTCTimestamp, open: lastOpen, high: lastHigh, low: lastLow, close: currentPrice });
         } else {
-          lastCandleTime = candleTimeStamp; lastOpen = currentPrice; lastHigh = currentPrice; lastLow = currentPrice;
+          lastCandleTime = candleTimeStamp;
+          lastOpen = currentPrice;
+          lastHigh = currentPrice;
+          lastLow = currentPrice;
           accumulatedVolume = currentVolume;
-          candleSeries.update({ time: candleTimeStamp, open: lastOpen, high: lastHigh, low: lastLow, close: currentPrice });
+          candleSeries.update({ time: candleTimeStamp as UTCTimestamp, open: lastOpen, high: lastHigh, low: lastLow, close: currentPrice });
         }
 
         const volColor = currentPrice >= lastOpen ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)";
-        volumeSeries.update({ time: candleTimeStamp, value: accumulatedVolume, color: volColor });
+        volumeSeries.update({ time: candleTimeStamp as UTCTimestamp, value: accumulatedVolume, color: volColor });
 
         if (lastValidDataRef.current) {
           lastValidDataRef.current = {

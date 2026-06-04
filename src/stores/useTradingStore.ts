@@ -148,8 +148,8 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     } else {
       try {
         set({ isLoading: true });
-        const { data: { user } } = await supabase.auth.session ? { data: { user: { id: null } } } : { data: { user: null } }; 
-        const clerkUserId = user?.id || (window as any).Clerk?.user?.id;
+        const { data: { user } } = await supabase.auth.getSession() ? { data: { user: { id: null } } } : { data: { user: null } }; 
+        const clerkUserId = user?.id || window.Clerk?.user?.id;
 
         if (!clerkUserId) {
           alert("Sesi login terputus, silakan refresh halaman.");
