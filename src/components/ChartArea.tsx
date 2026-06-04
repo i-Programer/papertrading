@@ -106,7 +106,7 @@ export default function ChartArea() {
         const now = Math.floor(Date.now() / 1000);
         const startTime = now - selectedPreset.rangeSeconds;
         const granularity = selectedPreset.granularity;
-        const API_BASE_URL = process.env.VITE_API_URL || 'http://localhost:5000';
+        const API_BASE_URL = process.env.NEXT_API_URL || 'http://localhost:5000';
 
         const response = await fetch(
           `${API_BASE_URL}/api/candles?product_id=${symbol}&granularity=${granularity}&start=${startTime}&end=${now}`
@@ -213,7 +213,7 @@ export default function ChartArea() {
     });
 
     // Real-time WebSocket Feed
-    const WS_BASE_URL = process.env.VITE_WS_URL || "ws://localhost:5000";
+    const WS_BASE_URL = process.env.NEXT_WS_URL || "ws://localhost:5000";
     const ws = new WebSocket(WS_BASE_URL);
     ws.onopen = () => {
       ws.send(JSON.stringify({ type: "subscribe", product_ids: [symbol], channels: ["ticker"] }));
