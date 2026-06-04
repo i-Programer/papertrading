@@ -134,7 +134,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       side,
       quantity,
       price,
-      timestamp: new Date().toLocaleTimeString(),
+      timestamp: new Date().toISOString(), // ✨ UBAH KE ISO STRING AGAR VALID DIPARSING
     };
 
     // --- 3. JALUR NEGOSIASI DATA (GUEST VS CLOUD DB) ---
