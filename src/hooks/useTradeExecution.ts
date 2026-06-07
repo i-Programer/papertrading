@@ -1,4 +1,5 @@
 // src/hooks/useTradeExecution.ts
+
 import { useState, useCallback } from "react";
 import { useTradingStore } from "@/stores/useTradingStore";
 import type { TradeSide, Position, TradeHistory } from "@/types/trading";
@@ -10,6 +11,62 @@ const getClerkUserId = (): string | null => {
   const clerk = (window as { Clerk?: { user?: { id?: string } } }).Clerk;
   return clerk?.user?.id || null;
 };
+
+// ===== ADD THESE TRANSFORM FUNCTIONS =====
+// Helper: Normalize symbol format (BTC-USD -> BTCUSDT)
+const normalizeSymbol = (symbol: string): string => {
+  if (!symbol) return "BTCUSDT";
+  
+  let normalized = symbol.replace(/-/g, '');
+  
+  if (normalized === 'BTCUSD') return 'BTCUSDT';
+  if (normalized === 'ETHUSD') return 'ETHUSDT';
+  if (normalized === 'BNBUSD') return 'BNBUSDT';
+  if (normalized === 'SOLUSD') return 'SOLUSDT';
+  if (normalized === 'XRPUSD') return 'XRPUSDT';
+  if (normalized === 'ADAUSD') return 'ADAUSDT';
+  if (normalized === 'DOGEUSD') return 'DOGEUSDT';
+  if (normalized === 'AVAXUSD') return 'AVAXUSDT';
+  if (normalized === 'DOTUSD') return 'DOTUSDT';
+  if (normalized === 'MATICUSD') return 'MATICUSDT';
+  
+  if (normalized.endsWith('USDT')) return normalized;
+  return `${normalized}USDT`;
+};
+
+// Transform backend position to frontend Position type
+const transformPosition = (backendPosition: any): Position => {
+  const entryPrice = parseFloat(backendPosition.entry_price || 0);
+  const quantity = parseFloat(backendPosition.quantity || 0);
+  const symbol = normalizeSymbol(backendPosition.symbol || 'BTCUSDT');
+  
+  // Use entryPrice as currentPrice initially (will be updated by WebSocket)
+  const current = entryPrice;
+  const pnl = 0; // Initial P&L is 0 until WebSocket updates
+  
+  return {
+    id: backendPosition.id || crypto.randomUUID(),
+    symbol: symbol,
+    side: backendPosition.side || "BUY",
+    quantity: quantity,
+    entryPrice: entryPrice,
+    currentPrice: current,
+    pnl: pnl,
+  };
+};
+
+// Transform trade history
+const transformTradeHistory = (backendTrade: any): TradeHistory => {
+  return {
+    id: backendTrade.id || crypto.randomUUID(),
+    symbol: normalizeSymbol(backendTrade.symbol || 'BTCUSDT'),
+    side: backendTrade.side || "BUY",
+    quantity: parseFloat(backendTrade.quantity || 0),
+    price: parseFloat(backendTrade.price || 0),
+    timestamp: backendTrade.timestamp || new Date().toISOString(),
+  };
+};
+// ===== END TRANSFORM FUNCTIONS =====
 
 // Guest mode trade execution (local only, no backend)
 const executeGuestTrade = (
@@ -203,7 +260,17 @@ export function useTradeExecution() {
         }
 
         if (data.success) {
-          // Update Zustand store with server response
+          console.log("=== TRADE EXECUTION SUCCESS ===");
+          console.log("Raw positions from backend:", data.positions);
+          
+          // ===== TRANSFORM THE BACKEND DATA =====
+          const transformedPositions = (data.positions || []).map(transformPosition);
+          const transformedHistory = (data.tradeHistory || []).map(transformTradeHistory);
+          
+          console.log("Transformed positions:", transformedPositions);
+          console.log("Transformed history:", transformedHistory);
+          
+          // Update Zustand store with TRANSFORMED data
           if (data.newCash !== undefined) {
             setBalance({
               ...balance,
@@ -212,11 +279,11 @@ export function useTradeExecution() {
               buyingPower: data.newCash,
             });
           }
-          if (data.positions) {
-            setPositions(data.positions);
+          if (transformedPositions.length > 0) {
+            setPositions(transformedPositions);
           }
-          if (data.tradeHistory) {
-            setTradeHistory(data.tradeHistory);
+          if (transformedHistory.length > 0) {
+            setTradeHistory(transformedHistory);
           }
           setIsExecuting(false);
           return true;

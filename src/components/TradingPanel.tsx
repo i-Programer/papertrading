@@ -24,9 +24,26 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
     setIsMounted(true);
   }, []);
 
-  const totalInvested = positions.reduce((sum, pos) => sum + pos.entryPrice * pos.quantity, 0);
-  const totalCurrentValue = positions.reduce((sum, pos) => sum + pos.currentPrice * pos.quantity, 0);
-  const totalPnL = positions.reduce((sum, pos) => sum + pos.pnl, 0);
+  // Replace these calculations in TradingPanel component
+  const totalInvested = positions.reduce((sum, pos) => {
+    const entryPrice = pos.entryPrice || pos.entryPrice || 0;
+    const quantity = pos.quantity || 0;
+    return sum + (entryPrice * quantity);
+  }, 0);
+
+  const totalCurrentValue = positions.reduce((sum, pos) => {
+    const currentPrice = pos.currentPrice || pos.currentPrice || pos.entryPrice || pos.entryPrice || 0;
+    const quantity = pos.quantity || 0;
+    return sum + (currentPrice * quantity);
+  }, 0);
+
+  const totalPnL = positions.reduce((sum, pos) => {
+    if (pos.pnl !== undefined && pos.pnl !== null) return sum + pos.pnl;
+    const entryPrice = pos.entryPrice || pos.entryPrice || 0;
+    const currentPrice = pos.currentPrice || pos.currentPrice || entryPrice;
+    const quantity = pos.quantity || 0;
+    return sum + ((currentPrice - entryPrice) * quantity);
+  }, 0);
   
   const winRate = (() => {
     const closedTrades = positions.filter((p) => p.pnl !== 0);

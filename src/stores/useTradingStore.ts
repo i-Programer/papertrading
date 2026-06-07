@@ -67,23 +67,30 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
 
+  // In useTradingStore.ts - ensure this function is correct
   updateLivePrices: (currentPrice) => {
     const { symbol, balance, positions } = get();
-    let totalPnL = 0;
-
+    
+    console.log(`Updating price for ${symbol}: ${currentPrice}`); // Debug log
+    
     const updatedPositions = positions.map((pos) => {
       if (pos.symbol === symbol) {
         const pnl = (currentPrice - pos.entryPrice) * pos.quantity;
-        totalPnL += pnl;
-        return { ...pos, currentPrice, pnl };
+        console.log(`Position ${pos.symbol}: entry=${pos.entryPrice}, current=${currentPrice}, qty=${pos.quantity}, pnl=${pnl}`); // Debug
+        return { 
+          ...pos, 
+          currentPrice, 
+          pnl 
+        };
       }
-      totalPnL += pos.pnl;
       return pos;
     });
-
+    
+    // Calculate total P&L across all positions
+    const totalPnL = updatedPositions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
     const newEquity = balance.cash + totalPnL;
     const dayPnlPercent = balance.cash > 0 ? (totalPnL / balance.cash) * 100 : 0;
-
+    
     set({
       positions: updatedPositions,
       balance: {
