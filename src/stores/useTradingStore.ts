@@ -1,7 +1,6 @@
 // src/stores/useTradingStore.ts
 import { create } from "zustand";
 import { supabase } from "@/utils/supabase";
-import { throttle } from 'lodash';
 import type {
   Position,
   TradeHistory,
@@ -44,9 +43,47 @@ const defaultBalance: UserBalance = {
   dayPnlPercent: 0,
 };
 
+// Helper to convert Binance symbol to display format
+const toDisplaySymbol = (symbol: string): string => {
+  if (symbol.endsWith('USDT')) {
+    return symbol.replace('USDT', '-USD');
+  }
+  return symbol;
+};
+
+// Rate limiting helper to prevent spam trading
+const rateLimiter = {
+  lastTradeTime: new Map<string, number>(),
+  minInterval: 1000, // 1 second between trades
+  
+  canTrade(userId: string): boolean {
+    const now = Date.now();
+    const lastTrade = this.lastTradeTime.get(userId) || 0;
+    if (now - lastTrade < this.minInterval) {
+      const waitTime = ((this.minInterval - (now - lastTrade)) / 1000).toFixed(1);
+      alert(`Please wait ${waitTime} seconds before next trade`);
+      return false;
+    }
+    this.lastTradeTime.set(userId, now);
+    return true;
+  },
+  
+  reset(userId: string): void {
+    this.lastTradeTime.delete(userId);
+  }
+};
+
+// Helper to safely get Clerk user ID
+const getClerkUserId = (): string | null => {
+  const clerk = (window as { Clerk?: { user?: { id?: string } } }).Clerk;
+  if (clerk?.user?.id) {
+    return clerk.user.id;
+  }
+  return null;
+};
+
 export const useTradingStore = create<TradingState>((set, get) => ({
-  // 1. DIUBAH: Menyesuaikan nilai default dengan format instrumen Coinbase (BTC-USD)
-  symbol: "BTC-USD",
+  symbol: "BTCUSDT", // Changed from BTC-USD to BTCUSDT for Binance
   interval: "15m",
   profile: defaultProfile,
   balance: defaultBalance,
@@ -66,7 +103,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     if (profile.name !== name || profile.email !== email) {
       set({
         profile: {
-          id: name === "Guest User" ? "demo-user" : "clerk-user",
+          id: name === "Guest User" ? "demo-user" : crypto.randomUUID(),
           name,
           email,
         },
@@ -78,20 +115,30 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     const { symbol, balance, positions, tradeHistory, profile } = get();
     const isGuest = profile.id === "demo-user";
     const totalCost = quantity * price;
+    const baseCurrency = symbol.replace('USDT', ''); // Extract base currency from Binance symbol
 
-    // --- 1. VALIDASI SALDO & KEPEMILIKAN ---
+    // --- VALIDATION CHECKS ---
     if (side === "BUY" && balance.cash < totalCost) {
-      alert("⚠️ Transaksi Gagal: Saldo Virtual Cash Tidak Cukup!");
+      alert(`⚠️ Insufficient funds!\nNeed: $${totalCost.toLocaleString()}\nAvailable: $${balance.cash.toLocaleString()}`);
       return false;
     }
 
     const existingPosition = positions.find((p) => p.symbol === symbol);
     if (side === "SELL" && (!existingPosition || existingPosition.quantity < quantity)) {
-      alert("⚠️ Transaksi Gagal: Anda tidak memiliki cukup aset untuk dijual!");
+      const availableQty = existingPosition?.quantity || 0;
+      alert(`⚠️ Insufficient assets to sell!\nYou have: ${availableQty} ${baseCurrency}\nAttempting to sell: ${quantity}`);
       return false;
     }
 
-    // --- 2. KALKULASI LOGIKA TRADING ---
+    // Rate limiting for authenticated users
+    if (!isGuest) {
+      const clerkUserId = getClerkUserId();
+      if (clerkUserId && !rateLimiter.canTrade(clerkUserId)) {
+        return false;
+      }
+    }
+
+    // --- CALCULATE NEW STATE ---
     const newCash = side === "BUY" ? balance.cash - totalCost : balance.cash + totalCost;
     let newPositions = [...positions];
     let finalQty = quantity;
@@ -106,7 +153,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
         );
       } else {
         newPositions.push({
-          id: Math.random().toString(36).substring(7),
+          id: crypto.randomUUID(),
           symbol,
           side: "BUY",
           quantity,
@@ -129,45 +176,58 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
 
     const newLog: TradeHistory = {
-      id: Math.random().toString(36).substring(7),
+      id: crypto.randomUUID(),
       symbol,
       side,
       quantity,
       price,
-      timestamp: new Date().toISOString(), // ✨ UBAH KE ISO STRING AGAR VALID DIPARSING
+      timestamp: new Date().toISOString(),
     };
 
-    // --- 3. JALUR NEGOSIASI DATA (GUEST VS CLOUD DB) ---
+    // --- GUEST MODE (No database) ---
     if (isGuest) {
       set({
-        balance: { ...balance, cash: newCash, buyingPower: newCash },
+        balance: { ...balance, cash: newCash, equity: newCash, buyingPower: newCash },
         positions: newPositions,
         tradeHistory: [newLog, ...tradeHistory],
       });
       return true;
-    } else {
-      try {
-        set({ isLoading: true });
-        const { data: { user } } = await supabase.auth.getSession() ? { data: { user: { id: null } } } : { data: { user: null } }; 
-        const clerkUserId = user?.id || window.Clerk?.user?.id;
+    }
 
-        if (!clerkUserId) {
-          alert("Sesi login terputus, silakan refresh halaman.");
-          return false;
-        }
+    // --- AUTHENTICATED MODE with Database ---
+    try {
+      set({ isLoading: true });
+      
+      const clerkUserId = getClerkUserId();
+      if (!clerkUserId) {
+        alert("Session expired. Please refresh and login again.");
+        return false;
+      }
 
-        // A. Insert History Log
-        await supabase.from("trade_history").insert({
+      // Execute database operations sequentially to ensure data consistency
+      
+      // 1. Insert trade history
+      const { error: historyError } = await supabase
+        .from("trade_history")
+        .insert({
           user_id: clerkUserId,
           symbol,
           side,
           quantity,
           price,
+          timestamp: new Date().toISOString(),
         });
 
-        // B. Upsert Positions
-        if (side === "BUY" || (side === "SELL" && finalQty > 0)) {
-          await supabase.from("positions").upsert(
+      if (historyError) {
+        console.error("Trade history insert error:", historyError);
+        throw new Error(historyError.message);
+      }
+
+      // 2. Handle positions table
+      if (side === "BUY" || (side === "SELL" && finalQty > 0)) {
+        const { error: positionError } = await supabase
+          .from("positions")
+          .upsert(
             {
               user_id: clerkUserId,
               symbol,
@@ -177,38 +237,56 @@ export const useTradingStore = create<TradingState>((set, get) => ({
             },
             { onConflict: "user_id,symbol" }
           );
-        } else if (side === "SELL" && finalQty === 0) {
-          await supabase
-            .from("positions")
-            .delete()
-            .eq("user_id", clerkUserId)
-            .eq("symbol", symbol);
+
+        if (positionError) {
+          console.error("Position upsert error:", positionError);
+          throw new Error(positionError.message);
         }
+      } else if (side === "SELL" && finalQty === 0) {
+        const { error: positionError } = await supabase
+          .from("positions")
+          .delete()
+          .eq("user_id", clerkUserId)
+          .eq("symbol", symbol);
 
-        // C. Update Cash di Profiles
-        await supabase
-          .from("profiles")
-          .update({ cash: newCash, equity: newCash })
-          .eq("id", clerkUserId);
-
-        set({
-          balance: { ...balance, cash: newCash, buyingPower: newCash },
-          positions: newPositions,
-          tradeHistory: [newLog, ...tradeHistory],
-        });
-
-        return true;
-      } catch (err) {
-        console.error("Database Transaction Error:", err);
-        alert("Terjadi kendala jaringan saat menyimpan transaksi.");
-        return false;
-      } finally {
-        set({ isLoading: false });
+        if (positionError) {
+          console.error("Position delete error:", positionError);
+          throw new Error(positionError.message);
+        }
       }
+
+      // 3. Update profile cash balance
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({ 
+          cash: newCash, 
+          equity: newCash,
+        })
+        .eq("id", clerkUserId);
+
+      if (profileError) {
+        console.error("Profile update error:", profileError);
+        throw new Error(profileError.message);
+      }
+
+      // ONLY update UI after ALL database operations succeed
+      set({
+        balance: { ...balance, cash: newCash, equity: newCash, buyingPower: newCash },
+        positions: newPositions,
+        tradeHistory: [newLog, ...tradeHistory],
+      });
+
+      return true;
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Unknown error occurred";
+      console.error("Transaction error:", err);
+      alert(`Transaction failed: ${errorMessage}\nPlease try again.`);
+      return false;
+    } finally {
+      set({ isLoading: false });
     }
   },
 
-  // 2. DISESUAIKAN: Memastikan kalkulasi PnL berjalan mulus dengan data Coinbase live feed
   updateLivePrices: (currentPrice) => {
     const { symbol, balance, positions } = get();
     let totalPnL = 0;
@@ -223,13 +301,16 @@ export const useTradingStore = create<TradingState>((set, get) => ({
       return pos;
     });
 
+    const newEquity = balance.cash + totalPnL;
+    const dayPnlPercent = balance.cash > 0 ? (totalPnL / balance.cash) * 100 : 0;
+
     set({
       positions: updatedPositions,
       balance: {
         ...balance,
-        equity: balance.cash + totalPnL,
+        equity: newEquity,
         dayPnl: totalPnL,
-        dayPnlPercent: balance.cash > 0 ? (totalPnL / balance.cash) * 100 : 0,
+        dayPnlPercent,
       }
     });
   },

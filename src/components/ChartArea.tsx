@@ -8,20 +8,17 @@ import {
   CandlestickSeries, 
   HistogramSeries,
   LineSeries,
-  createSeriesMarkers,
   IChartApi,
   ISeriesApi,
   CandlestickData,
   HistogramData,
-  LineData,
   Time,
   UTCTimestamp
 } from "lightweight-charts";
 import { useTradingStore } from "@/stores/useTradingStore";
 import { Loader2 } from "lucide-react";
-import { constants } from "fs/promises";
+import { wsManager, type TickerMessage } from "@/lib/websocket-manager";
 
-// Define proper types
 interface CandleData {
   time: UTCTimestamp;
   open: number;
@@ -46,14 +43,6 @@ interface EMAData {
   value: number;
 }
 
-interface TradeHistoryItem {
-  id: string;
-  symbol: string;
-  side: "BUY" | "SELL";
-  quantity: number;
-  timestamp: string;
-}
-
 interface LegendData {
   open: string;
   high: string;
@@ -65,20 +54,85 @@ interface LegendData {
   isPriceUp: boolean;
 }
 
-interface WebSocketMessage {
-  type: string;
-  price?: string;
-  last_size?: string;
-}
-
+// Enhanced presets with more time ranges
 const CHART_PRESETS = [
-  { label: "24H (5m)", rangeSeconds: 24 * 60 * 60, granularity: 300, description: "24 hours in 5 minute intervals" },
-  { label: "7D (1H)", rangeSeconds: 7 * 24 * 60 * 60, granularity: 3600, description: "7 days in 1 hour intervals" },
-  { label: "30D (4H)", rangeSeconds: 30 * 24 * 60 * 60, granularity: 14400, description: "30 days in 4 hour intervals" },
-  { label: "3M (1D)", rangeSeconds: 90 * 24 * 60 * 60, granularity: 86400, description: "3 months in 1 day interval" },
-  { label: "6M (1D)", rangeSeconds: 180 * 24 * 60 * 60, granularity: 86400, description: "6 months in 1 day interval" },
-  { label: "1Y (2D)", rangeSeconds: 365 * 24 * 60 * 60, granularity: 172800, description: "1 tahun dengan candle 2 hari" },
-  { label: "5Y (1W)", rangeSeconds: 5 * 365 * 24 * 60 * 60, granularity: 604800, description: "5 tahun dengan candle 1 minggu" }
+  { 
+    label: "12H (1m)", 
+    rangeSeconds: 12 * 3600, 
+    granularity: 60, 
+    description: "12 hours - 1 minute candles",
+    interval: '1m'
+  },
+  { 
+    label: "1D (3m)", 
+    rangeSeconds: 24 * 3600, 
+    granularity: 180, 
+    description: "24 hours - 3 minute candles",
+    interval: '3m'
+  },
+  { 
+    label: "3D (5m)", 
+    rangeSeconds: 3 * 24 * 3600, 
+    granularity: 300, 
+    description: "3 days - 5 minute candles",
+    interval: '5m'
+  },
+  { 
+    label: "7D (15m)", 
+    rangeSeconds: 7 * 24 * 3600, 
+    granularity: 900, 
+    description: "7 days - 15 minute candles",
+    interval: '15m'
+  },
+  { 
+    label: "14D (30m)", 
+    rangeSeconds: 14 * 24 * 3600, 
+    granularity: 1800, 
+    description: "14 days - 30 minute candles",
+    interval: '30m'
+  },
+  { 
+    label: "1M (1h)", 
+    rangeSeconds: 30 * 24 * 3600, 
+    granularity: 3600, 
+    description: "1 month - 1 hour candles",
+    interval: '1h'
+  },
+  { 
+    label: "3M (2h)", 
+    rangeSeconds: 90 * 24 * 3600, 
+    granularity: 7200, 
+    description: "3 months - 2 hour candles",
+    interval: '2h'
+  },
+  { 
+    label: "6M (4h)", 
+    rangeSeconds: 180 * 24 * 3600, 
+    granularity: 14400, 
+    description: "6 months - 4 hour candles",
+    interval: '4h'
+  },
+  { 
+    label: "1Y (1d)", 
+    rangeSeconds: 365 * 24 * 3600, 
+    granularity: 86400, 
+    description: "1 year - 1 day candles",
+    interval: '1d'
+  },
+  { 
+    label: "2Y (2d)", 
+    rangeSeconds: 730 * 24 * 3600, 
+    granularity: 172800, 
+    description: "2 years - 2 day candles",
+    interval: '2d'
+  },
+  { 
+    label: "5Y (1w)", 
+    rangeSeconds: 5 * 365 * 24 * 3600, 
+    granularity: 604800, 
+    description: "5 years - 1 week candles",
+    interval: '1w'
+  },
 ];
 
 function calculateMA(data: CandleData[], period: number): MAData[] {
@@ -109,12 +163,45 @@ function calculateEMA(data: CandleData[], period: number): EMAData[] {
   return emaData;
 }
 
+function getBinanceInterval(granularity: number): string {
+  const intervals: Record<number, string> = {
+    60: '1m',
+    180: '3m',
+    300: '5m',
+    900: '15m',
+    1800: '30m',
+    3600: '1h',
+    7200: '2h',
+    14400: '4h',
+    21600: '6h',
+    43200: '12h',
+    86400: '1d',
+    172800: '2d',
+    604800: '1w',
+  };
+  return intervals[granularity] || '1h';
+}
+
+// Helper to format volume for display (K/M/B suffixes)
+function formatVolumeDisplay(value: number): string {
+  if (value >= 1_000_000_000) {
+    return (value / 1_000_000_000).toFixed(2) + 'B';
+  }
+  if (value >= 1_000_000) {
+    return (value / 1_000_000).toFixed(2) + 'M';
+  }
+  if (value >= 1_000) {
+    return (value / 1_000).toFixed(2) + 'K';
+  }
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
 export default function ChartArea() {
   const symbol = useTradingStore((state) => state.symbol);
-  // const tradeHistory = useTradingStore((state) => state.tradeHistory) as TradeHistoryItem[];
-  const [selectedPreset, setSelectedPreset] = useState(CHART_PRESETS[0]);
+  const [selectedPreset, setSelectedPreset] = useState(CHART_PRESETS[2]); // Default to 3D (5m)
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartLoading, setChartLoading] = useState(true);
+  const [isMounted, setIsMounted] = useState(false);
 
   const [legendData, setLegendData] = useState<LegendData>({
     open: "-", high: "-", low: "-", close: "-", volume: "-", ma50: "-", ema20: "-", isPriceUp: true
@@ -122,118 +209,189 @@ export default function ChartArea() {
 
   const lastValidDataRef = useRef<LegendData | null>(null);
   
-  // 🔥 REFS UNTUK MENGHINDARI SIKLUS RE-RENDER YANG MERUSAK INSTANCE CHART
+  // Store MA/EMA data for crosshair
+  const maDataRef = useRef<MAData[]>([]);
+  const emaDataRef = useRef<EMAData[]>([]);
+  
+  // Refs to avoid re-render cycles
   const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-  const firstCandleTimeRef = useRef<UTCTimestamp | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const maSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  
+  // Real-time data tracking
+  const lastCandleTimeRef = useRef<number | null>(null);
+  const lastOpenRef = useRef<number>(0);
+  const lastHighRef = useRef<number>(0);
+  const lastLowRef = useRef<number>(0);
+  const accumulatedVolumeRef = useRef<number>(0);
 
-  // useEffect 1: Mengurus Rendering Dasar Chart & Data Historis (Hanya dipicu jika simbol atau preset berubah)
+  // Handle hydration
   useEffect(() => {
-    if (!chartContainerRef.current) return;
+    setIsMounted(true);
+  }, []);
+
+  // Effect 1: Chart initialization and data fetching
+  useEffect(() => {
+    if (!isMounted || !chartContainerRef.current) return;
 
     setChartLoading(true);
 
     const chart = createChart(chartContainerRef.current, {
-      layout: { background: { type: ColorType.Solid, color: "#131722" }, textColor: "#d1d4dc" },
-      grid: { vertLines: { color: "#2a2e39" }, horzLines: { color: "#2a2e39" } },
+      layout: { 
+        background: { type: ColorType.Solid, color: "#131722" }, 
+        textColor: "#d1d4dc" 
+      },
+      grid: { 
+        vertLines: { color: "#2a2e39" }, 
+        horzLines: { color: "#2a2e39" } 
+      },
       rightPriceScale: { borderColor: "#2a2e39" },
-      timeScale: { borderColor: "#2a2e39", timeVisible: true, secondsVisible: false },
+      timeScale: { 
+        borderColor: "#2a2e39", 
+        timeVisible: true, 
+        secondsVisible: false 
+      },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
     });
+    chartRef.current = chart;
 
     const candleSeries = chart.addSeries(CandlestickSeries, {
-      upColor: "#26a69a", downColor: "#ef5350", borderVisible: false, wickUpColor: "#26a69a", wickDownColor: "#ef5350", title: " "
+      upColor: "#26a69a", 
+      downColor: "#ef5350", 
+      borderVisible: false, 
+      wickUpColor: "#26a69a", 
+      wickDownColor: "#ef5350"
     });
-    candleSeriesRef.current = candleSeries; // Simpan ke ref agar bisa diakses dari luar useEffect ini
+    candleSeriesRef.current = candleSeries;
 
     const volumeSeries = chart.addSeries(HistogramSeries, {
-      priceFormat: { type: "volume" }, priceScaleId: "volume-scale", title: " "
+      priceFormat: { type: "volume" }, 
+      priceScaleId: "volume-scale"
     });
+    volumeSeriesRef.current = volumeSeries;
 
-    const maSeries = chart.addSeries(LineSeries, { color: "#f5bc3f", priceLineVisible: false, lineWidth: 1, title: " " });
-    const emaSeries = chart.addSeries(LineSeries, { color: "#26c6da", priceLineVisible: false, lineWidth: 1, title: " " });
+    const maSeries = chart.addSeries(LineSeries, { 
+      color: "#f5bc3f", 
+      priceLineVisible: false, 
+      lineWidth: 1 
+    });
+    maSeriesRef.current = maSeries;
+
+    const emaSeries = chart.addSeries(LineSeries, { 
+      color: "#26c6da", 
+      priceLineVisible: false, 
+      lineWidth: 1 
+    });
+    emaSeriesRef.current = emaSeries;
 
     chart.priceScale("volume-scale").applyOptions({
-      borderVisible: false, visible: false, scaleMargins: { top: 0.8, bottom: 0 },
+      borderVisible: false, 
+      visible: false, 
+      scaleMargins: { top: 0.8, bottom: 0 },
     });
 
     const fetchHistory = async () => {
       try {
-        const now = Math.floor(Date.now() / 1000) as UTCTimestamp;
-        const startTime = (now - selectedPreset.rangeSeconds) as UTCTimestamp;
+        const now = Math.floor(Date.now() / 1000);
+        const startTime = (now - selectedPreset.rangeSeconds);
         const granularity = selectedPreset.granularity;
         const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000';
 
+        const binanceInterval = getBinanceInterval(granularity);
+        
+        console.log(`[Chart] Fetching ${selectedPreset.description}...`);
+        
         const response = await fetch(
-          `${API_BASE_URL}/api/candles?product_id=${symbol}&granularity=${granularity}&start=${startTime}&end=${now}`
+          `${API_BASE_URL}/api/candles?symbol=${symbol}&interval=${binanceInterval}&startTime=${startTime * 1000}&endTime=${now * 1000}&limit=1000`
         );
 
         if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
         const rawData: unknown[] = await response.json();
+        
         if (!rawData || rawData.length === 0) {
+          console.log("No candle data received");
           setChartLoading(false);
           return;
         }
 
+        console.log(`[Chart] Received ${rawData.length} candles for ${selectedPreset.label}`);
+
         const formattedCandles: CandleData[] = rawData
           .map((row: unknown) => {
             const rowArray = row as number[];
+            const timeInSeconds = Math.floor(rowArray[0] / 1000) as UTCTimestamp;
             return {
-              time: rowArray[0] as UTCTimestamp,
-              open: rowArray[3],
-              high: rowArray[2],
-              low: rowArray[1],
-              close: rowArray[4]
+              time: timeInSeconds,
+              open: Number(rowArray[1]),
+              high: Number(rowArray[2]),
+              low: Number(rowArray[3]),
+              close: Number(rowArray[4])
             };
           })
+          .filter(candle => candle.time && !isNaN(candle.open) && !isNaN(candle.high) && !isNaN(candle.low) && !isNaN(candle.close))
           .sort((a: CandleData, b: CandleData) => a.time - b.time);
+
+        if (formattedCandles.length === 0) {
+          console.log("No valid candles after formatting");
+          setChartLoading(false);
+          return;
+        }
 
         const formattedVolume: VolumeData[] = rawData
           .map((row: unknown) => {
             const rowArray = row as number[];
+            const timeInSeconds = Math.floor(rowArray[0] / 1000) as UTCTimestamp;
+            const close = Number(rowArray[4]);
+            const open = Number(rowArray[1]);
             return {
-              time: rowArray[0] as UTCTimestamp,
-              value: rowArray[5],
-              color: rowArray[4] >= rowArray[3] ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)",
+              time: timeInSeconds,
+              value: Number(rowArray[5]),
+              color: close >= open ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)",
             };
           })
+          .filter(vol => vol.time && !isNaN(vol.value))
           .sort((a: VolumeData, b: VolumeData) => a.time - b.time);
 
-        if (formattedCandles.length > 0) {
-          firstCandleTimeRef.current = formattedCandles[0].time;
+        if (candleSeriesRef.current) {
+          candleSeriesRef.current.setData(formattedCandles);
+        }
+        if (volumeSeriesRef.current) {
+          volumeSeriesRef.current.setData(formattedVolume);
         }
 
-        candleSeries.setData(formattedCandles);
-        volumeSeries.setData(formattedVolume);
-
-        const ma50Data = calculateMA(formattedCandles, 50);
-        const ema20Data = calculateEMA(formattedCandles, 20);
-        maSeries.setData(ma50Data);
-        emaSeries.setData(ema20Data);
-
-        // Pemicu awal render marker untuk history transaksi saat pertama kali chart dimuat
-        // triggerMarkersUpdate();
+        // Calculate and store indicators
+        if (formattedCandles.length >= 50) {
+          const ma50Data = calculateMA(formattedCandles, 50);
+          const ema20Data = calculateEMA(formattedCandles, 20);
+          maDataRef.current = ma50Data;
+          emaDataRef.current = ema20Data;
+          if (maSeriesRef.current) maSeriesRef.current.setData(ma50Data);
+          if (emaSeriesRef.current) emaSeriesRef.current.setData(ema20Data);
+        }
 
         const lastCandle = formattedCandles[formattedCandles.length - 1];
         const lastVol = formattedVolume[formattedVolume.length - 1];
-        const lastMa = ma50Data[ma50Data.length - 1];
-        const lastEma = ema20Data[ema20Data.length - 1];
-
+        
         const initialLegend: LegendData = {
           open: lastCandle.open.toFixed(2),
           high: lastCandle.high.toFixed(2),
           low: lastCandle.low.toFixed(2),
           close: lastCandle.close.toFixed(2),
-          volume: lastVol?.value.toLocaleString("en-US", { maximumFractionDigits: 0 }) || "-",
-          ma50: lastMa ? lastMa.value.toFixed(2) : "-",
-          ema20: lastEma ? lastEma.value.toFixed(2) : "-",
+          volume: lastVol ? formatVolumeDisplay(lastVol.value) : "-",
+          ma50: maDataRef.current.length > 0 ? maDataRef.current[maDataRef.current.length - 1].value.toFixed(2) : "-",
+          ema20: emaDataRef.current.length > 0 ? emaDataRef.current[emaDataRef.current.length - 1].value.toFixed(2) : "-",
           isPriceUp: lastCandle.close >= lastCandle.open
         };
 
         lastValidDataRef.current = initialLegend;
         setLegendData(initialLegend);
 
-        chart.timeScale().fitContent();
+        if (chartRef.current) {
+          chartRef.current.timeScale().fitContent();
+        }
         setChartLoading(false);
       } catch (err) {
         console.error("Failed to load chart data:", err);
@@ -243,7 +401,7 @@ export default function ChartArea() {
 
     fetchHistory();
 
-    // Logika Sinkronisasi Kursor Mouse (Crosshair Move)
+    // Crosshair move handler with MA/EMA
     chart.subscribeCrosshairMove((param) => {
       if (
         param.point === undefined ||
@@ -263,42 +421,39 @@ export default function ChartArea() {
 
       const candleData = param.seriesData.get(candleSeries) as CandlestickData<Time> | undefined;
       const volData = param.seriesData.get(volumeSeries) as HistogramData<Time> | undefined;
-      const maData = param.seriesData.get(maSeries) as LineData<Time> | undefined;
-      const emaData = param.seriesData.get(emaSeries) as LineData<Time> | undefined;
 
       if (candleData && 'open' in candleData && 'high' in candleData && 'low' in candleData && 'close' in candleData) {
         const candle = candleData as CandlestickData<Time>;
+        const candleTime = candle.time as number;
+        
+        // Find MA and EMA values at this timestamp
+        let maValue = "-";
+        let emaValue = "-";
+        
+        const maPoint = maDataRef.current.find(m => m.time === candleTime);
+        const emaPoint = emaDataRef.current.find(e => e.time === candleTime);
+        
+        if (maPoint) maValue = maPoint.value.toFixed(2);
+        if (emaPoint) emaValue = emaPoint.value.toFixed(2);
+        
         setLegendData({
           open: (candle.open as number).toFixed(2),
           high: (candle.high as number).toFixed(2),
           low: (candle.low as number).toFixed(2),
           close: (candle.close as number).toFixed(2),
-          volume: volData && 'value' in volData ? (volData.value as number).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "-",
-          ma50: maData && 'value' in maData ? (maData.value as number).toFixed(2) : "-",
-          ema20: emaData && 'value' in emaData ? (emaData.value as number).toFixed(2) : "-",
+          volume: volData && 'value' in volData ? formatVolumeDisplay(volData.value as number) : "-",
+          ma50: maValue,
+          ema20: emaValue,
           isPriceUp: (candle.close as number) >= (candle.open as number)
         });
       }
     });
 
-    // Real-time WebSocket Feed
-    const WS_BASE_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:5000";
-    const ws = new WebSocket(WS_BASE_URL);
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "subscribe", product_ids: [symbol], channels: ["ticker"] }));
-    };
-
-    let lastCandleTime: number | null = null;
-    let lastOpen = 0;
-    let lastHigh = 0;
-    let lastLow = 0;
-    let accumulatedVolume = 0;
-
-    ws.onmessage = (event) => {
-      const message: WebSocketMessage = JSON.parse(event.data);
-      if (message.type === "ticker" && message.price) {
-        const currentPrice = parseFloat(message.price);
-        const currentVolume = parseFloat(message.last_size || "0");
+    // WebSocket Manager Integration for real-time updates
+    const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
+      if (data.type === "ticker" && data.price && data.product_id === symbol) {
+        const currentPrice = parseFloat(data.price);
+        const currentVolume = parseFloat(data.last_size || "0");
         
         const granularity = selectedPreset.granularity;
         const currentTimeStamp = Math.floor(Date.now() / 1000);
@@ -306,117 +461,115 @@ export default function ChartArea() {
 
         useTradingStore.getState().updateLivePrices(currentPrice);
 
-        if (lastCandleTime === candleTimeStamp) {
-          lastHigh = Math.max(lastHigh, currentPrice);
-          lastLow = Math.min(lastLow, currentPrice);
-          accumulatedVolume += currentVolume; 
-          candleSeries.update({ time: candleTimeStamp as UTCTimestamp, open: lastOpen, high: lastHigh, low: lastLow, close: currentPrice });
-        } else {
-          lastCandleTime = candleTimeStamp;
-          lastOpen = currentPrice;
-          lastHigh = currentPrice;
-          lastLow = currentPrice;
-          accumulatedVolume = currentVolume;
-          candleSeries.update({ time: candleTimeStamp as UTCTimestamp, open: lastOpen, high: lastHigh, low: lastLow, close: currentPrice });
-        }
+        if (candleSeriesRef.current && volumeSeriesRef.current) {
+          if (lastCandleTimeRef.current === candleTimeStamp) {
+            // Update existing candle - USING ORIGINAL SCRIPT VOLUME APPROACH
+            lastHighRef.current = Math.max(lastHighRef.current, currentPrice);
+            lastLowRef.current = Math.min(lastLowRef.current, currentPrice);
+            accumulatedVolumeRef.current += currentVolume;
+            
+            candleSeriesRef.current.update({ 
+              time: candleTimeStamp as UTCTimestamp, 
+              open: lastOpenRef.current, 
+              high: lastHighRef.current, 
+              low: lastLowRef.current, 
+              close: currentPrice 
+            });
+            
+            // Update volume - using scaling for display (original approach)
+            const scaledVolume = accumulatedVolumeRef.current / 1000000;
+            const volColor = currentPrice >= lastOpenRef.current ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)";
+            
+            volumeSeriesRef.current.update({ 
+              time: candleTimeStamp as UTCTimestamp, 
+              value: scaledVolume,
+              color: volColor 
+            });
+          } else {
+            // Create new candle - USING ORIGINAL SCRIPT VOLUME APPROACH
+            lastCandleTimeRef.current = candleTimeStamp;
+            lastOpenRef.current = currentPrice;
+            lastHighRef.current = currentPrice;
+            lastLowRef.current = currentPrice;
+            accumulatedVolumeRef.current = currentVolume;
+            
+            candleSeriesRef.current.update({ 
+              time: candleTimeStamp as UTCTimestamp, 
+              open: lastOpenRef.current, 
+              high: lastHighRef.current, 
+              low: lastLowRef.current, 
+              close: currentPrice 
+            });
+            
+            // Update volume for new candle - using scaling for display (original approach)
+            const scaledVolume = accumulatedVolumeRef.current / 1000000;
+            const volColor = currentPrice >= lastOpenRef.current ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)";
+            
+            volumeSeriesRef.current.update({ 
+              time: candleTimeStamp as UTCTimestamp, 
+              value: scaledVolume,
+              color: volColor 
+            });
+          }
 
-        const volColor = currentPrice >= lastOpen ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)";
-        volumeSeries.update({ time: candleTimeStamp as UTCTimestamp, value: accumulatedVolume, color: volColor });
-
-        if (lastValidDataRef.current) {
-          lastValidDataRef.current = {
-            ...lastValidDataRef.current,
-            open: lastOpen.toFixed(2),
-            high: lastHigh.toFixed(2),
-            low: lastLow.toFixed(2),
-            close: currentPrice.toFixed(2),
-            volume: accumulatedVolume.toLocaleString("en-US", { maximumFractionDigits: 0 }),
-            isPriceUp: currentPrice >= lastOpen
-          };
+          // Update legend data cache - using formatted display
+          if (lastValidDataRef.current) {
+            lastValidDataRef.current = {
+              ...lastValidDataRef.current,
+              open: lastOpenRef.current.toFixed(2),
+              high: lastHighRef.current.toFixed(2),
+              low: lastLowRef.current.toFixed(2),
+              close: currentPrice.toFixed(2),
+              volume: formatVolumeDisplay(accumulatedVolumeRef.current),
+              isPriceUp: currentPrice >= lastOpenRef.current
+            };
+            setLegendData(lastValidDataRef.current);
+          }
         }
       }
-    };
+    });
+
+    wsManager.connect(symbol);
 
     const handleResize = () => {
-      if (chartContainerRef.current) chart.applyOptions({ width: chartContainerRef.current.clientWidth, height: chartContainerRef.current.clientHeight });
+      if (chartContainerRef.current && chartRef.current) {
+        chartRef.current.applyOptions({ 
+          width: chartContainerRef.current.clientWidth, 
+          height: chartContainerRef.current.clientHeight 
+        });
+      }
     };
+    
     window.addEventListener("resize", handleResize);
 
     return () => {
+      unsubscribe();
       window.removeEventListener("resize", handleResize);
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: "unsubscribe", product_ids: [symbol], channels: ["ticker"] }));
+      if (chartRef.current) {
+        chartRef.current.remove();
       }
-      ws.close();
-      chart.remove(); // Dipanggil dengan aman hanya jika simbol/preset berganti
     };
-  }, [symbol, selectedPreset]);
+  }, [symbol, selectedPreset, isMounted]);
 
-  // const triggerMarkersUpdate = () => {
-  //   if (!candleSeriesRef.current || !firstCandleTimeRef.current) return;
-
-  //   const granularity = selectedPreset.granularity;
-
-  //   const markers = tradeHistory
-  //     .filter((trade) => trade.symbol === symbol)
-  //     .map((trade) => {
-  //       let formattedTimestamp = trade.timestamp;
-  //       console.log(formattedTimestamp);
-
-  //       if (formattedTimestamp && typeof formattedTimestamp === "string") {
-  //         // 1. Ganti spasi menjadi 'T' agar menjadi standar ISO (misal: "2026-06-04 05:57..." -> "2026-06-04T05:57...")
-  //         formattedTimestamp = formattedTimestamp.replace(" ", "T");
-          
-  //         // 2. Normalisasi mikrodetik Supabase (+00 atauZ) agar browser tidak bingung
-  //         // Jika berakhiran +00, pastikan formatnya ramah untuk di-parse
-  //         if (formattedTimestamp.includes("+")) {
-  //           const parts = formattedTimestamp.split("+");
-  //           // Ambil bagian sebelum tanda +, potong mikrodetiknya jika terlalu panjang, lalu gabungkan kembali
-  //           const timePart = parts[0].split(".");
-  //           formattedTimestamp = timePart[0] + "+" + parts[1];
-  //         }
-  //       }
-
-  //       // Sekarang dijamin valid di semua browser!
-  //       const parsedDate = new Date(formattedTimestamp);
-  //       const tradeTimeRaw = parsedDate.getTime() / 1000;
-        
-  //       // Jika parsing masih tetap gagal karena hal lain, fallback aman ke candle pertama
-  //       let exactTradeTime = isNaN(tradeTimeRaw) ? (firstCandleTimeRef.current as number) : tradeTimeRaw;
-        
-  //       // Jika sukses di-parse, bulatkan waktu transaksi ke awal blok lilin granularity-nya agar mengunci kokoh
-  //       if (!isNaN(tradeTimeRaw)) {
-  //         exactTradeTime = tradeTimeRaw - (tradeTimeRaw % granularity);
-  //       }
-
-  //       const isBuy = trade.side === "BUY";
-
-  //       return {
-  //         id: trade.id,
-  //         time: exactTradeTime, // Waktu absolut penempatan marker di lilin yang tepat
-  //         position: (isBuy ? "belowBar" : "aboveBar") as const,
-  //         color: isBuy ? "#26a69a" : "#ef5350",
-  //         shape: (isBuy ? "arrowUp" : "arrowDown") as const,
-  //         text: `${trade.side} ${trade.quantity}`,
-  //       };
-  //     })
-  //     .filter((marker) => marker.time >= (firstCandleTimeRef.current as number))
-  //     .sort((a, b) => (a.time as number) - (b.time as number));
-
-  //   createSeriesMarkers(candleSeriesRef.current, markers);
-  // };
-
-  // // Jalankan sinkronisasi marker setiap kali tradeHistory bertambah secara eksternal
-  // useEffect(() => {
-  //   triggerMarkersUpdate();
-  // }, [tradeHistory, symbol]);
+  if (!isMounted) {
+    return (
+      <div className="flex flex-1 flex-col h-full bg-[#131722] p-2 relative select-none">
+        <div className="flex-1 w-full relative pt-2 h-full flex items-center justify-center">
+          <div className="flex flex-col items-center gap-2 text-xs text-[#787b86]">
+            <Loader2 className="h-6 w-6 animate-spin text-[#2962ff]" />
+            <span>Loading chart...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-1 flex-col h-full bg-[#131722] p-2 relative select-none">
       <div className="flex-1 w-full relative pt-2 h-full" ref={chartContainerRef}>
         
-        {/* OVERLAY LEGENDA INTERAKTIF */}
-        <div className="absolute top-4 left-4 z-10 flex flex-col gap-1 bg-[#131722]/60 p-2 rounded backdrop-blur-xs text-[11px] font-medium pointer-events-none">
+        {/* OVERLAY LEGEND */}
+        <div className="absolute top-4 left-4 z-10 flex flex-col gap-1 bg-[#131722]/80 backdrop-blur-sm p-2 rounded text-[11px] font-medium pointer-events-none border border-[#2a2e39]/50">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
             <span className="font-bold text-white tracking-wide mr-1">{symbol}</span>
             <span className="text-[#787b86]">O</span>
@@ -436,8 +589,9 @@ export default function ChartArea() {
           </div>
         </div>
 
+        {/* Loading Overlay */}
         {chartLoading && (
-          <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#131722]/80 backdrop-blur-xs h-full">
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#131722]/80 backdrop-blur-sm">
             <div className="flex flex-col items-center gap-2 text-xs text-[#787b86]">
               <Loader2 className="h-6 w-6 animate-spin text-[#2962ff]" />
               <span>Loading {selectedPreset.description}...</span>
@@ -446,16 +600,26 @@ export default function ChartArea() {
         )}
       </div>
 
-      {/* NAVIGATION BAR DENGAN PRESETS */}
-      <div className="flex h-9 shrink-0 items-center justify-between border-b border-[#2a2e39] bg-[#1c2030]/30 px-2 rounded-t select-none">
-        <div className="flex items-center gap-2 overflow-x-auto">
+      {/* PRESET NAVIGATION BAR - Scrollable for many options */}
+      <div className="flex h-9 shrink-0 items-center justify-between border-t border-[#2a2e39] bg-[#1c2030]/30 px-2 rounded-b select-none">
+        <div className="flex items-center gap-1 overflow-x-auto scrollbar-thin scrollbar-thumb-[#2a2e39] pb-1">
           {CHART_PRESETS.map((preset) => (
             <button
               key={preset.label}
               type="button"
-              onClick={() => setSelectedPreset(preset)}
-              className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors whitespace-nowrap ${
-                selectedPreset.label === preset.label ? "bg-[#2962ff] text-white" : "text-[#787b86] hover:bg-[#1e222d] hover:text-[#d1d4dc]"
+              onClick={() => {
+                setSelectedPreset(preset);
+                // Reset all real-time tracking when preset changes
+                lastCandleTimeRef.current = null;
+                lastOpenRef.current = 0;
+                lastHighRef.current = 0;
+                lastLowRef.current = 0;
+                accumulatedVolumeRef.current = 0;
+              }}
+              className={`rounded px-2.5 py-1 text-xs font-semibold transition-all whitespace-nowrap ${
+                selectedPreset.label === preset.label 
+                  ? "bg-[#2962ff] text-white shadow-lg shadow-[#2962ff]/20" 
+                  : "text-[#787b86] hover:bg-[#1e222d] hover:text-[#d1d4dc]"
               }`}
               title={preset.description}
             >
@@ -463,7 +627,7 @@ export default function ChartArea() {
             </button>
           ))}
         </div>
-        <div className="text-[10px] font-bold text-[#787b86] uppercase tracking-wider hidden md:block">
+        <div className="text-[10px] font-medium text-[#787b86] uppercase tracking-wider hidden md:block ml-2">
           {selectedPreset.description}
         </div>
       </div>
