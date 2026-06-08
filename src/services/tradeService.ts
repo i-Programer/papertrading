@@ -17,6 +17,25 @@ export interface TradeExecutionResult {
   error?: string;
 }
 
+interface Position {
+  id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  entryPrice: number;
+  currentPrice: number;
+  pnl: number;
+}
+
+interface TradeHistory {
+  id: string;
+  symbol: string;
+  side: string;
+  quantity: number;
+  price: number;
+  timestamp: string;
+}
+
 export const tradeService = {
   async executeTrade(params: TradeExecutionParams & { userId: string }): Promise<TradeExecutionResult> {
     const response = await fetch(`${API_BASE}/api/trade/execute`, {

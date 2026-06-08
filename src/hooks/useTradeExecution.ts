@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import { useTradingStore } from "@/stores/useTradingStore";
 import type { TradeSide, Position, TradeHistory } from "@/types/trading";
+import { generateId } from "@/utils/id";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
@@ -11,6 +12,7 @@ const getClerkUserId = (): string | null => {
   const clerk = (window as { Clerk?: { user?: { id?: string } } }).Clerk;
   return clerk?.user?.id || null;
 };
+
 
 // ===== ADD THESE TRANSFORM FUNCTIONS =====
 // Helper: Normalize symbol format (BTC-USD -> BTCUSDT)
@@ -45,7 +47,7 @@ const transformPosition = (backendPosition: any): Position => {
   const pnl = 0; // Initial P&L is 0 until WebSocket updates
   
   return {
-    id: backendPosition.id || crypto.randomUUID(),
+    id: backendPosition.id || generateId(),
     symbol: symbol,
     side: backendPosition.side || "BUY",
     quantity: quantity,
@@ -58,7 +60,7 @@ const transformPosition = (backendPosition: any): Position => {
 // Transform trade history
 const transformTradeHistory = (backendTrade: any): TradeHistory => {
   return {
-    id: backendTrade.id || crypto.randomUUID(),
+    id: backendTrade.id || generateId(),
     symbol: normalizeSymbol(backendTrade.symbol || 'BTCUSDT'),
     side: backendTrade.side || "BUY",
     quantity: parseFloat(backendTrade.quantity || 0),
@@ -123,7 +125,7 @@ const executeGuestTrade = (
       newPositions = [
         ...currentPositions,
         {
-          id: crypto.randomUUID(),
+          id: generateId(),
           symbol,
           side: "BUY",
           quantity,
@@ -146,7 +148,7 @@ const executeGuestTrade = (
   }
 
   const newTrade: TradeHistory = {
-    id: crypto.randomUUID(),
+    id: generateId(),
     symbol,
     side,
     quantity,

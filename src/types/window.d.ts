@@ -6,7 +6,12 @@ declare global {
     Clerk?: {
       user?: {
         id: string;
+        fullName?: string;
+        primaryEmailAddress?: {
+          emailAddress: string;
+        };
       };
+      open?: (options?: { afterSignInUrl?: string; afterSignUpUrl?: string }) => void;
     };
   }
 }

@@ -380,7 +380,7 @@ function RecentOrders({ symbol, filteredHistory }: any) {
           Recent {symbol} Orders
         </h3>
       </div>
-      <div className="flex-1 overflow-y-auto px-3 pb-3 custom-scrollbar">
+      <div className="flex-1 overflow-y-auto px-3 pb-3 order-panel-scrollbar">
         {filteredHistory.length === 0 ? (
           <div className="text-center py-8 text-xs text-[#434651]">
             No recent orders for this pair.
@@ -418,18 +418,18 @@ function RecentOrders({ symbol, filteredHistory }: any) {
         )}
       </div>
       <style jsx>{`
-        .custom-scrollbar::-webkit-scrollbar {
+        .order-panel-scrollbar::-webkit-scrollbar {
           width: 4px;
         }
-        .custom-scrollbar::-webkit-scrollbar-track {
+        .order-panel-scrollbar::-webkit-scrollbar-track {
           background: #1e222d;
           border-radius: 4px;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
+        .order-panel-scrollbar::-webkit-scrollbar-thumb {
           background: #2a2e39;
           border-radius: 4px;
         }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+        .order-panel-scrollbar::-webkit-scrollbar-thumb:hover {
           background: #2962ff;
         }
       `}</style>

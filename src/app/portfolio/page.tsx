@@ -89,7 +89,7 @@ export default function PortfolioPage() {
               ) : (
                 tradeHistory.map((log) => (
                   <tr key={log.id} className="border-b border-[#2a2e39]/40 hover:bg-[#131722]/40 transition-colors">
-                    <td className="py-3 text-[#787b86] tabular-nums">{log.timestamp}</td>
+                    <td className="py-3 text-[#787b86] tabular-nums">{new Date(log.timestamp).toLocaleString()}</td>
                     <td className="py-3 font-bold text-white">{log.symbol}</td>
                     <td className="py-3">
                       <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${

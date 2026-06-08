@@ -10,7 +10,6 @@ import {
   LineSeries,
   IChartApi,
   ISeriesApi,
-  Time,
   UTCTimestamp,
 } from "lightweight-charts";
 import { Loader2 } from "lucide-react";
@@ -80,11 +79,8 @@ export default function ChartArea() {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    // In ChartArea.tsx, before setting data:
-
     // Set data with validation
     const validatedCandles = candles.filter((candle, index, arr) => {
-      // Check for duplicate or out-of-order timestamps
       if (index > 0 && candle.time <= arr[index - 1].time) {
         console.warn(`Skipping duplicate/out-of-order candle at index ${index}, time: ${candle.time}`);
         return false;
@@ -95,9 +91,23 @@ export default function ChartArea() {
       console.warn(`Filtered out ${candles.length - validatedCandles.length} invalid candles`);
     }
   
-    // Set data
-    candleSeries.setData(validatedCandles.map(c => ({ ...c, time: c.time as UTCTimestamp })));
-    volumeSeries.setData(volumeData);
+    // Set data with proper typing
+    const chartData = validatedCandles.map(c => ({
+      time: c.time as UTCTimestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    candleSeries.setData(chartData);
+    
+    const volumeChartData = volumeData.map(v => ({
+      time: v.time as UTCTimestamp,
+      value: v.value,
+      color: v.color,
+    }));
+    volumeSeries.setData(volumeChartData);
+    
     if (ma50Data.length) maSeries.setData(ma50Data);
     if (ema20Data.length) emaSeries.setData(ema20Data);
 
@@ -119,14 +129,25 @@ export default function ChartArea() {
     };
   }, [candles, volumeData, ma50Data, ema20Data, isMounted]);
 
-  // Update realtime
+  // Update realtime - FIXED VERSION
   useEffect(() => {
     if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
     const lastCandle = candles[candles.length - 1];
     const lastVolume = volumeData[volumeData.length - 1];
     if (lastCandle && lastVolume) {
-      candleSeriesRef.current.update(lastCandle);
-      volumeSeriesRef.current.update(lastVolume);
+      // Fix: Explicitly type the candle data for lightweight-charts
+      candleSeriesRef.current.update({
+        time: lastCandle.time as UTCTimestamp,
+        open: lastCandle.open,
+        high: lastCandle.high,
+        low: lastCandle.low,
+        close: lastCandle.close,
+      });
+      volumeSeriesRef.current.update({
+        time: lastVolume.time as UTCTimestamp,
+        value: lastVolume.value,
+        color: lastVolume.color,
+      });
     }
   }, [candles, volumeData]);
 
@@ -149,7 +170,7 @@ export default function ChartArea() {
   );
 }
 
-// Sub-components (presentational)
+// Rest of your sub-components remain the same...
 function ChartLegend({ legend, symbol }: { legend: LegendData | null; symbol: string }) {
   if (!legend) return null;
   return (

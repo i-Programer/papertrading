@@ -1,6 +1,7 @@
 // src/utils/dbSync.ts
 import { profileService } from "@/services/profileService";
 import type { Position, TradeHistory } from "@/types/trading";
+import { generateId } from "@/utils/id";
 
 // Helper: Normalize symbol format (BTC-USD -> BTCUSDT)
 const normalizeSymbol = (symbol: string): string => {
@@ -28,6 +29,7 @@ const normalizeSymbol = (symbol: string): string => {
   return `${normalized}USDT`;
 };
 
+
 // Helper: Transform backend position to frontend Position type
 const transformPosition = (backendPosition: any, currentPrice?: number): Position => {
   // Safely extract values with fallbacks
@@ -42,7 +44,7 @@ const transformPosition = (backendPosition: any, currentPrice?: number): Positio
   const pnl = (current - entryPrice) * quantity;
   
   return {
-    id: backendPosition.id || crypto.randomUUID(),
+    id: backendPosition.id || generateId(),
     symbol: symbol,
     side: backendPosition.side || "BUY",
     quantity: quantity,
@@ -55,7 +57,7 @@ const transformPosition = (backendPosition: any, currentPrice?: number): Positio
 // Helper: Transform trade history
 const transformTradeHistory = (backendTrade: any): TradeHistory => {
   return {
-    id: backendTrade.id || crypto.randomUUID(),
+    id: backendTrade.id || generateId(),
     symbol: normalizeSymbol(backendTrade.symbol || 'BTCUSDT'),
     side: backendTrade.side || "BUY",
     quantity: parseFloat(backendTrade.quantity || 0),

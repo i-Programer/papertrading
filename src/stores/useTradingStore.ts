@@ -1,6 +1,7 @@
 // src/stores/useTradingStore.ts
 import { create } from "zustand";
 import type { Position, TradeHistory, UserBalance, UserProfile } from "@/types/trading";
+import { generateId } from "@/utils/id";
 
 interface TradingState {
   // Global UI state
@@ -59,7 +60,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     if (profile.name !== name || profile.email !== email) {
       set({
         profile: {
-          id: name === "Guest User" ? "demo-user" : crypto.randomUUID(),
+          id: name === "Guest User" ? "demo-user" : generateId(),
           name,
           email,
         },

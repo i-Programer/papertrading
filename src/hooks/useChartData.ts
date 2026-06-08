@@ -167,7 +167,9 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     } finally {
       setIsLoading(false);
     }
-  }, [symbol, preset, ma50Data.length, ema20Data.length]);
+  }, [symbol, preset, preset.interval]);
+
+  
 
   // WebSocket realtime update handler
   const handleRealtimeUpdate = useCallback(
