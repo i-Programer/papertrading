@@ -1,5 +1,4 @@
 // src/types/trading.ts
-
 export type TradeSide = "BUY" | "SELL";
 
 export interface UserProfile {
@@ -24,6 +23,9 @@ export interface Position {
   entryPrice: number;
   currentPrice: number;
   pnl: number;
+  // Add these if your code references them
+  entry_price?: number;  // For backward compatibility
+  pnlPercent?: number;
 }
 
 export interface TradeHistory {

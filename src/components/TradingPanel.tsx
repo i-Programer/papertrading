@@ -26,7 +26,7 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
 
   // Replace these calculations in TradingPanel component
   const totalInvested = positions.reduce((sum, pos) => {
-    const entryPrice = pos.entryPrice || pos.entryPrice || 0;
+    const entryPrice = pos.entryPrice || 0;
     const quantity = pos.quantity || 0;
     return sum + (entryPrice * quantity);
   }, 0);
@@ -130,9 +130,9 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
               valueClassName={pnlColorClass(totalPnL)}
             />
             <StatCard
-              title="Win Rate"
-              value={`${winRate.toFixed(1)}%`}
-              subtitle={`${positions.length} active position${positions.length !== 1 ? "s" : ""}`}
+              title="Total P&L"
+              value={formatCurrency(totalPnL)}
+              subtitle={`${totalPnL >= 0 ? "+" : ""}${balance.dayPnlPercent.toFixed(2)}% today`}
               progress={winRate}
             />
             <ResetButton showResetConfirm={showResetConfirm} onReset={handleResetAccount} />
@@ -224,10 +224,10 @@ function EmptyPositionsState() {
 }
 
 function PositionRow({ position, isExpanded, onToggle }: any) {
-  const pnlPercent = ((position.currentPrice - position.entry_price) / position.entry_price) * 100;
+  // Fix: Use entryPrice instead of entry_price
+  const pnlPercent = ((position.currentPrice - position.entryPrice) / position.entryPrice) * 100;
   const baseCurrency = position.symbol.replace("USDT", "");
-
-  console.log(position);
+  
   return (
     <div className={`transition-all duration-200 ${isExpanded ? "bg-[#1e222d]/30" : "hover:bg-[#1e222d]/20"}`}>
       <div onClick={onToggle} className="grid grid-cols-7 gap-2 px-4 py-3 cursor-pointer">
@@ -236,11 +236,9 @@ function PositionRow({ position, isExpanded, onToggle }: any) {
           <div className="text-[9px] text-[#787b86] font-mono">{baseCurrency}/USD</div>
         </div>
         <div className="col-span-1">
-          <span
-            className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
-              position.side === "BUY" ? "bg-[#2962ff]/10 text-[#2962ff]" : "bg-[#ef5350]/10 text-[#ef5350]"
-            }`}
-          >
+          <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${
+            position.side === "BUY" ? "bg-[#2962ff]/10 text-[#2962ff]" : "bg-[#ef5350]/10 text-[#ef5350]"
+          }`}>
             {position.side}
           </span>
         </div>

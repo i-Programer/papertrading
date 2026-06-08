@@ -50,7 +50,7 @@ export default function PortfolioPage() {
         </div>
 
         {/* Card 3: Active Assets Count */}
-        <div className="bg-[#1c2030} p-5 rounded-lg border border-[#2a2e39] flex items-center gap-4">
+        <div className="bg-[#1c2030] p-5 rounded-lg border border-[#2a2e39] flex items-center gap-4">
           <div className="p-3 bg-[#ef5350]/10 rounded-full text-[#ef5350]">
             <History className="h-6 w-6" />
           </div>

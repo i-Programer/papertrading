@@ -91,15 +91,12 @@ export default function ChartArea() {
       }
       return true;
     });
-
     if (validatedCandles.length !== candles.length) {
       console.warn(`Filtered out ${candles.length - validatedCandles.length} invalid candles`);
     }
-
-    candleSeries.setData(validatedCandles.map(c => ({ ...c, time: c.time as UTCTimestamp })));
-
+  
     // Set data
-    candleSeries.setData(candles.map(c => ({ ...c, time: c.time as UTCTimestamp })));
+    candleSeries.setData(validatedCandles.map(c => ({ ...c, time: c.time as UTCTimestamp })));
     volumeSeries.setData(volumeData);
     if (ma50Data.length) maSeries.setData(ma50Data);
     if (ema20Data.length) emaSeries.setData(ema20Data);
