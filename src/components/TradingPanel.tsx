@@ -1,7 +1,7 @@
 // src/components/TradingPanel.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign, PieChart, XCircle } from "lucide-react";
 import { useTradingStore } from "@/stores/useTradingStore";
 import { formatCurrency, pnlColorClass } from "@/utils/format";
@@ -19,6 +19,7 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
   const [isMounted, setIsMounted] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsMounted(true);
@@ -81,8 +82,6 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
     );
   }
 
-  console.log(positions);
-
   return (
     <div className="relative shrink-0 select-none">
       <button
@@ -96,14 +95,16 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
         </span>
       </button>
 
+      {/* Changed overflow-scroll to overflow-y-auto to only show vertical scrollbar */}
       <div
-        className={`overflow-hidden border-t border-[#2a2e39] bg-[#131722] transition-all duration-300 ease-in-out ${
+        className={`overflow-y-auto border-t border-[#2a2e39] bg-[#131722] transition-all duration-300 ease-in-out custom-scrollbar ${
           isOpen ? "max-h-[400px] opacity-100" : "max-h-0 border-t-transparent opacity-0"
         }`}
+        style={{ scrollbarWidth: 'thin', overflowX: 'hidden' }}
       >
         <div className="flex h-full flex-col">
-          {/* Stats Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4 border-b border-[#2a2e39] bg-gradient-to-r from-[#131722] to-[#1c2030]/30">
+          {/* Stats Cards - Fixed height, no scroll */}
+          <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4 border-b border-[#2a2e39] bg-gradient-to-r from-[#131722] to-[#1c2030]/30">
             <StatCard
               title="Cash Balance"
               value={formatCurrency(balance.cash)}
@@ -119,7 +120,7 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
             <StatCard
               title="Total P&L"
               value={formatCurrency(totalPnL)}
-              subtitle={`${balance.dayPnlPercent >= 0 ? "+" : ""}${balance.dayPnlPercent.toFixed(2)}% today`}
+              subtitle={`${totalPnL >= 0 ? "+" : ""}${balance.dayPnlPercent.toFixed(2)}% today`}
               icon={
                 totalPnL >= 0 ? (
                   <TrendingUp className="h-3 w-3 text-[#26a69a]" />
@@ -130,59 +131,92 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
               valueClassName={pnlColorClass(totalPnL)}
             />
             <StatCard
-              title="Total P&L"
-              value={formatCurrency(totalPnL)}
-              subtitle={`${totalPnL >= 0 ? "+" : ""}${balance.dayPnlPercent.toFixed(2)}% today`}
+              title="Win Rate"
+              value={`${winRate.toFixed(1)}%`}
+              subtitle={`${positions.length} active position${positions.length !== 1 ? "s" : ""}`}
               progress={winRate}
             />
             <ResetButton showResetConfirm={showResetConfirm} onReset={handleResetAccount} />
           </div>
 
           {/* Positions Table */}
-          <div className="flex-1 overflow-auto">
-            <div className="min-w-full">
-              <div className="grid grid-cols-7 gap-2 px-4 py-2 border-b border-[#2a2e39] bg-[#1c2030]/30 text-[10px] font-semibold uppercase tracking-wider text-[#787b86] sticky top-0">
-                <div className="col-span-1">Symbol</div>
-                <div className="col-span-1">Side</div>
-                <div className="col-span-1 text-right">Quantity</div>
-                <div className="col-span-1 text-right">Entry Price</div>
-                <div className="col-span-1 text-right">Current Price</div>
-                <div className="col-span-1 text-right">P&L</div>
-                <div className="col-span-1 text-right">P&L %</div>
-              </div>
+          <div className="min-w-full">
+            {/* Sticky header */}
+            <div className="sticky top-0 z-10 grid grid-cols-7 gap-2 px-4 py-2 border-b border-[#2a2e39] bg-[#1c2030] text-[10px] font-semibold uppercase tracking-wider text-[#787b86]">
+              <div className="col-span-1">Symbol</div>
+              <div className="col-span-1">Side</div>
+              <div className="col-span-1 text-right">Quantity</div>
+              <div className="col-span-1 text-right">Entry Price</div>
+              <div className="col-span-1 text-right">Current Price</div>
+              <div className="col-span-1 text-right">P&L</div>
+              <div className="col-span-1 text-right">P&L %</div>
+            </div>
 
-              <div className="divide-y divide-[#2a2e39]/30">
-                {positions.length === 0 ? (
-                  <EmptyPositionsState />
-                ) : (
-                  positions.map((pos) => (
-                    <PositionRow
-                      key={pos.id}
-                      position={pos}
-                      isExpanded={selectedPosition === pos.id}
-                      onToggle={() => setSelectedPosition(selectedPosition === pos.id ? null : pos.id)}
-                    />
-                  ))
-                )}
-              </div>
-
-              {positions.length > 0 && (
-                <PortfolioSummary
-                  bestPerformer={bestPerformer}
-                  worstPerformer={worstPerformer}
-                  totalInvested={totalInvested}
-                  totalCurrentValue={totalCurrentValue}
-                />
+            <div className="divide-y divide-[#2a2e39]/30">
+              {positions.length === 0 ? (
+                <EmptyPositionsState />
+              ) : (
+                positions.map((pos) => (
+                  <PositionRow
+                    key={pos.id}
+                    position={pos}
+                    isExpanded={selectedPosition === pos.id}
+                    onToggle={() => setSelectedPosition(selectedPosition === pos.id ? null : pos.id)}
+                  />
+                ))
               )}
             </div>
+
+            {positions.length > 0 && (
+              <PortfolioSummary
+                bestPerformer={bestPerformer}
+                worstPerformer={worstPerformer}
+                totalInvested={totalInvested}
+                totalCurrentValue={totalCurrentValue}
+              />
+            )}
           </div>
         </div>
       </div>
+      
+      {/* Global styles for custom scrollbar */}
+      <style jsx global>{`
+        .custom-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #2962ff #1c2030;
+          overflow-x: hidden !important;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+          height: 0px; /* Hide horizontal scrollbar */
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #1c2030;
+          border-radius: 3px;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #2a2e39;
+          border-radius: 3px;
+          transition: background 0.2s ease;
+        }
+        
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #2962ff;
+        }
+        
+        /* Hide horizontal scrollbar completely */
+        .custom-scrollbar::-webkit-scrollbar-corner {
+          background: transparent;
+        }
+      `}</style>
     </div>
   );
 }
 
-// Sub-components
+// Sub-components (StatCard, ResetButton, EmptyPositionsState, PositionRow, PortfolioSummary remain the same)
 function StatCard({ title, value, subtitle, icon, valueClassName, progress }: any) {
   return (
     <div className="bg-[#1c2030]/50 rounded-lg p-3 border border-[#2a2e39] hover:border-[#2962ff]/30 transition-all">
@@ -224,7 +258,6 @@ function EmptyPositionsState() {
 }
 
 function PositionRow({ position, isExpanded, onToggle }: any) {
-  // Fix: Use entryPrice instead of entry_price
   const pnlPercent = ((position.currentPrice - position.entryPrice) / position.entryPrice) * 100;
   const baseCurrency = position.symbol.replace("USDT", "");
   
@@ -291,7 +324,7 @@ function PositionRow({ position, isExpanded, onToggle }: any) {
 
 function PortfolioSummary({ bestPerformer, worstPerformer, totalInvested, totalCurrentValue }: any) {
   return (
-    <div className="border-t border-[#2a2e39] bg-[#1c2030]/40 px-4 py-3 mt-2">
+    <div className="sticky bottom-0 border-t border-[#2a2e39] bg-[#1c2030]/95 backdrop-blur-sm px-4 py-3 mt-2">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
         <div>
           <div className="text-[#787b86] mb-1">Best Performer</div>

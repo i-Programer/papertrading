@@ -169,8 +169,8 @@ export default function SidebarRight() {
         ))}
       </div>
 
-      {/* Market List */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Market List - Added custom scrollbar classes */}
+      <div className="flex-1 overflow-y-auto sidebar-scrollbar">
         {isLoading ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-xs text-[#787b86]">
             <Loader2 className="h-6 w-6 animate-spin text-[#2962ff]" />
@@ -220,6 +220,46 @@ export default function SidebarRight() {
           <span className="font-bold text-white">{watchlist.length} coins</span>
         </div>
       </div>
+
+      {/* Custom scrollbar styles */}
+      <style jsx global>{`
+        .sidebar-scrollbar {
+          scrollbar-width: thin;
+          scrollbar-color: #2962ff #1c2030;
+          overflow-x: hidden !important;
+        }
+        
+        .sidebar-scrollbar::-webkit-scrollbar {
+          width: 6px;
+          height: 0px; /* Hide horizontal scrollbar */
+        }
+        
+        .sidebar-scrollbar::-webkit-scrollbar-track {
+          background: #1c2030;
+          border-radius: 3px;
+          margin: 4px 0;
+        }
+        
+        .sidebar-scrollbar::-webkit-scrollbar-thumb {
+          background: #2a2e39;
+          border-radius: 3px;
+          transition: background 0.2s ease;
+        }
+        
+        .sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: #2962ff;
+        }
+        
+        /* Hide horizontal scrollbar completely */
+        .sidebar-scrollbar::-webkit-scrollbar-corner {
+          background: transparent;
+        }
+        
+        /* Optional: Add a subtle gradient effect when scrolling */
+        .sidebar-scrollbar {
+          background: linear-gradient(to bottom, transparent 0%, rgba(41, 98, 255, 0.05) 100%);
+        }
+      `}</style>
     </aside>
   );
 }
