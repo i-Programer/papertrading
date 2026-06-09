@@ -37,6 +37,7 @@ class WebSocketManager {
   private messageId = 1;
   private subscribedStreams: Set<string> = new Set();
   private isConnecting = false;
+  private isSubscribing = false;
   
   // Priority queue for messages
   private messageQueue: Array<{ priority: 'high' | 'low'; data: TickerMessage; timestamp: number }> = [];
@@ -103,36 +104,36 @@ class WebSocketManager {
     }
   }
 
+  
   /**
    * Send subscribe message for a single symbol (HIGH PRIORITY)
    */
   private sendSubscribe(symbol: string): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    if (this.isSubscribing) return;
+    this.isSubscribing = true;
     
-    const stream = `${symbol.toLowerCase()}@ticker`;
-    
-    // Unsubscribe from previous symbol first to avoid duplicates
-    if (this.subscribedStreams.size > 0) {
-      const previousStreams = Array.from(this.subscribedStreams);
-      const unsubscribeMsg = {
-        method: "UNSUBSCRIBE",
-        params: previousStreams,
+    try {
+      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+      
+      const stream = `${symbol.toLowerCase()}@ticker`;
+      
+      // Check if already subscribed
+      if (this.subscribedStreams.has(stream)) {
+        this.isSubscribing = false;
+        return;
+      }
+      
+      const subscribeMsg: SubscribeMessage = {
+        method: "SUBSCRIBE",
+        params: [stream],
         id: this.messageId++
       };
-      this.ws.send(JSON.stringify(unsubscribeMsg));
-      this.subscribedStreams.clear();
-      console.log(`[WS] Unsubscribed from ${previousStreams.length} previous streams`);
+      this.ws.send(JSON.stringify(subscribeMsg));
+      this.subscribedStreams.add(stream);
+      console.log(`[WS] Subscribed to ${symbol}`);
+    } finally {
+      this.isSubscribing = false;
     }
-    
-    // Subscribe to new symbol
-    const subscribeMsg: SubscribeMessage = {
-      method: "SUBSCRIBE",
-      params: [stream],
-      id: this.messageId++
-    };
-    this.ws.send(JSON.stringify(subscribeMsg));
-    this.subscribedStreams.add(stream);
-    console.log(`[WS] Subscribed to ${symbol} (high priority)`);
   }
 
   /**

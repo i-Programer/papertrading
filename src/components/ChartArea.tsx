@@ -1,4 +1,4 @@
-// src/components/ChartArea.tsx (CORRECTED FIXED VERSION)
+// src/components/ChartArea.tsx
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -11,14 +11,33 @@ import {
   IChartApi,
   ISeriesApi,
   UTCTimestamp,
+  MouseEventHandler,
+  Time,
 } from "lightweight-charts";
 import { Loader2 } from "lucide-react";
-import { useChartData, CHART_PRESETS, type LegendData } from "@/hooks/useChartData";
+import { useChartData, CHART_PRESETS, type LegendData, type ChartPreset } from "@/hooks/useChartData";
 import { useTradingStore } from "@/stores/useTradingStore";
 
+// ============ TYPES ============
+interface ChartLegendProps {
+  legend: LegendData | null;
+  symbol: string;
+}
+
+interface ChartPresetBarProps {
+  presets: ChartPreset[];
+  selected: ChartPreset;
+  onSelect: (preset: ChartPreset) => void;
+}
+
+interface ChartLoadingOverlayProps {
+  preset: ChartPreset;
+}
+
+// ============ MAIN COMPONENT ============
 export default function ChartArea() {
   const symbol = useTradingStore((state) => state.symbol);
-  const [selectedPreset, setSelectedPreset] = useState(CHART_PRESETS[2]);
+  const [selectedPreset, setSelectedPreset] = useState<ChartPreset>(CHART_PRESETS[2]);
   const { candles, volumeData, ma50Data, ema20Data, legend, isLoading } = useChartData(
     symbol,
     selectedPreset
@@ -33,7 +52,7 @@ export default function ChartArea() {
   const [isMounted, setIsMounted] = useState(false);
   const [legendData, setLegendData] = useState<LegendData | null>(null);
   const lastValidDataRef = useRef<LegendData | null>(null);
-  const hasInitialDataRef = useRef(false); // Track if we've done initial fit
+  const hasInitialDataRef = useRef<boolean>(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -58,13 +77,11 @@ export default function ChartArea() {
         borderColor: "#2a2e39", 
         timeVisible: true, 
         secondsVisible: false,
-        // ✅ Ensure interactions are enabled
         fixLeftEdge: false,
         fixRightEdge: false,
       },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
-      // ✅ Enable scroll/zoom interactions
       handleScroll: { mouseWheel: true, pressedMouseMove: true },
       handleScale: { mouseWheel: true, pinch: true },
     });
@@ -86,10 +103,18 @@ export default function ChartArea() {
     });
     volumeSeriesRef.current = volumeSeries;
 
-    const maSeries = chart.addSeries(LineSeries, { color: "#f5bc3f", priceLineVisible: false, lineWidth: 1 });
+    const maSeries = chart.addSeries(LineSeries, { 
+      color: "#f5bc3f", 
+      priceLineVisible: false, 
+      lineWidth: 1 
+    });
     maSeriesRef.current = maSeries;
 
-    const emaSeries = chart.addSeries(LineSeries, { color: "#26c6da", priceLineVisible: false, lineWidth: 1 });
+    const emaSeries = chart.addSeries(LineSeries, { 
+      color: "#26c6da", 
+      priceLineVisible: false, 
+      lineWidth: 1 
+    });
     emaSeriesRef.current = emaSeries;
 
     chart.priceScale("volume-scale").applyOptions({
@@ -100,14 +125,14 @@ export default function ChartArea() {
 
     // Crosshair interaction for legend
     chart.subscribeCrosshairMove((param) => {
-      if (!candleSeriesRef.current) return;
+      if (!candleSeriesRef.current || !chartContainerRef.current) return;
 
       if (
         param.point === undefined ||
         param.point.x < 0 ||
-        param.point.x > chartContainerRef.current!.clientWidth ||
+        param.point.x > chartContainerRef.current.clientWidth ||
         param.point.y < 0 ||
-        param.point.y > chartContainerRef.current!.clientHeight
+        param.point.y > chartContainerRef.current.clientHeight
       ) {
         if (lastValidDataRef.current) setLegendData(lastValidDataRef.current);
         return;
@@ -143,6 +168,7 @@ export default function ChartArea() {
           width: chartContainerRef.current.clientWidth,
           height: chartContainerRef.current.clientHeight,
         });
+        chartRef.current.timeScale().fitContent();
       }
     };
     window.addEventListener("resize", handleResize);
@@ -184,7 +210,7 @@ export default function ChartArea() {
     if (ma50Data.length) maSeriesRef.current?.setData(ma50Data);
     if (ema20Data.length) emaSeriesRef.current?.setData(ema20Data);
 
-    // ✅ ONLY fit content ONCE when initial data loads
+    // ONLY fit content ONCE when initial data loads
     if (!hasInitialDataRef.current && chartRef.current) {
       chartRef.current.timeScale().fitContent();
       hasInitialDataRef.current = true;
@@ -194,7 +220,7 @@ export default function ChartArea() {
     const lastCandle = validatedCandles[validatedCandles.length - 1];
     const lastVolume = volumeData[volumeData.length - 1];
     if (lastCandle && lastVolume) {
-      const newLegend = {
+      const newLegend: LegendData = {
         open: lastCandle.open.toFixed(2),
         high: lastCandle.high.toFixed(2),
         low: lastCandle.low.toFixed(2),
@@ -207,7 +233,7 @@ export default function ChartArea() {
       lastValidDataRef.current = newLegend;
       setLegendData(newLegend);
     }
-  }, [candles, volumeData, ma50Data, ema20Data]); // ✅ No fitContent here anymore!
+  }, [candles, volumeData, ma50Data, ema20Data]);
 
   if (!isMounted) {
     return <ChartLoading />;
@@ -228,8 +254,9 @@ export default function ChartArea() {
   );
 }
 
-// Rest of your sub-components remain the same...
-function ChartLegend({ legend, symbol }: { legend: LegendData | null; symbol: string }) {
+// ============ SUB-COMPONENTS ============
+
+function ChartLegend({ legend, symbol }: ChartLegendProps) {
   if (!legend) return null;
   return (
     <div className="absolute top-4 left-4 z-10 flex flex-col gap-1 bg-[#131722]/80 backdrop-blur-sm p-2 rounded text-[11px] font-medium pointer-events-none border border-[#2a2e39]/50">
@@ -254,11 +281,11 @@ function ChartLegend({ legend, symbol }: { legend: LegendData | null; symbol: st
   );
 }
 
-function ChartPresetBar({ presets, selected, onSelect }: any) {
+function ChartPresetBar({ presets, selected, onSelect }: ChartPresetBarProps) {
   return (
     <div className="flex h-9 shrink-0 items-center justify-between border-t border-[#2a2e39] bg-[#1c2030]/30 px-2 rounded-b select-none">
       <div className="flex items-center gap-1 overflow-x-auto">
-        {presets.map((preset: any) => (
+        {presets.map((preset) => (
           <button
             key={preset.label}
             onClick={() => onSelect(preset)}
@@ -292,7 +319,7 @@ function ChartLoading() {
   );
 }
 
-function ChartLoadingOverlay({ preset }: { preset: any }) {
+function ChartLoadingOverlay({ preset }: ChartLoadingOverlayProps) {
   return (
     <div className="absolute inset-0 z-20 flex items-center justify-center bg-[#131722]/80 backdrop-blur-sm">
       <div className="flex flex-col items-center gap-2 text-xs text-[#787b86]">

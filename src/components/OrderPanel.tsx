@@ -6,7 +6,68 @@ import { useTradingStore } from "@/stores/useTradingStore";
 import { useTradeExecution } from "@/hooks/useTradeExecution";
 import { useLivePrice } from "@/hooks/useLivePrice";
 import { formatCurrency } from "@/utils/format";
+import type { Position, TradeHistory, UserBalance } from "@/types/trading";
 
+// ============ TYPES ============
+interface BalanceInfoProps {
+  activeTab: "BUY" | "SELL";
+  balance: UserBalance;
+  currentPosition: Position | undefined;
+  symbol: string;
+  livePrice: number;
+  onSetMax: (qty: number) => void;
+}
+
+interface LimitPriceInputProps {
+  limitPrice: string;
+  livePrice: number;
+  onChange: (value: string) => void;
+}
+
+interface MarketPriceDisplayProps {
+  livePrice: number;
+  isConnected: boolean;
+}
+
+interface QuantityInputProps {
+  symbol: string;
+  quantity: string;
+  availableQty: number;
+  quickAmounts: number[];
+  onChange: (value: string) => void;
+  activeTab: "BUY" | "SELL";
+  balance: UserBalance;
+  livePrice: number;
+  currentPosition: Position | undefined;
+}
+
+interface PriceImpactWarningProps {
+  impact: number;
+  estimatedPrice: number;
+}
+
+interface TotalCostProps {
+  totalCost: number;
+  orderType: "MARKET" | "LIMIT";
+}
+
+interface ExecuteButtonProps {
+  activeTab: "BUY" | "SELL";
+  quantity: string;
+  availableQty: number;
+  orderType: "MARKET" | "LIMIT";
+  limitPrice: string;
+  isExecuting: boolean;
+  symbol: string;
+  onClick: () => void;
+}
+
+interface RecentOrdersProps {
+  symbol: string;
+  filteredHistory: TradeHistory[];
+}
+
+// ============ MAIN COMPONENT ============
 export default function OrderPanel() {
   const symbol = useTradingStore((state) => state.symbol);
   const tradeHistory = useTradingStore((state) => state.tradeHistory);
@@ -90,7 +151,7 @@ export default function OrderPanel() {
       ? parseFloat(quantity) * livePrice
       : parseFloat(quantity) * parseFloat(limitPrice || "0")) || 0;
 
-  const quickAmounts = [0.1, 0.5, 1.0, 2.0, 5.0];
+  const quickAmounts: number[] = [0.1, 0.5, 1.0, 2.0, 5.0];
   const filteredHistory = tradeHistory.filter((log) => log.symbol === symbol).slice(0, 5);
 
   // Price impact calculation
@@ -168,7 +229,7 @@ export default function OrderPanel() {
           currentPosition={currentPosition}
           symbol={symbol}
           livePrice={livePrice}
-          onSetMax={(qty) => setQuantity(qty.toString())}
+          onSetMax={(qty: number) => setQuantity(qty.toString())}
         />
 
         {orderType === "LIMIT" && (
@@ -219,8 +280,16 @@ export default function OrderPanel() {
   );
 }
 
-// Sub-components
-function BalanceInfo({ activeTab, balance, currentPosition, symbol, livePrice, onSetMax }: any) {
+// ============ SUB-COMPONENTS ============
+
+function BalanceInfo({ 
+  activeTab, 
+  balance, 
+  currentPosition, 
+  symbol, 
+  livePrice, 
+  onSetMax 
+}: BalanceInfoProps) {
   const baseCurrency = symbol.replace("USDT", "");
   const maxBuyQty = Math.floor((balance.cash / livePrice) * 1000) / 1000;
 
@@ -231,15 +300,23 @@ function BalanceInfo({ activeTab, balance, currentPosition, symbol, livePrice, o
       </span>
       <div className="text-right">
         <span className="font-bold text-[#d1d4dc] tabular-nums">
-          {activeTab === "BUY" ? formatCurrency(balance.cash) : `${(currentPosition?.quantity || 0).toFixed(4)} ${baseCurrency}`}
+          {activeTab === "BUY" 
+            ? formatCurrency(balance.cash) 
+            : `${(currentPosition?.quantity || 0).toFixed(4)} ${baseCurrency}`}
         </span>
         {activeTab === "BUY" && (
-          <button onClick={() => onSetMax(maxBuyQty)} className="ml-2 text-[10px] text-[#2962ff] hover:text-[#1e53e5]">
+          <button 
+            onClick={() => onSetMax(maxBuyQty)} 
+            className="ml-2 text-[10px] text-[#2962ff] hover:text-[#1e53e5]"
+          >
             Max
           </button>
         )}
         {activeTab === "SELL" && currentPosition && (
-          <button onClick={() => onSetMax(currentPosition.quantity)} className="ml-2 text-[10px] text-[#ef5350] hover:text-[#e53935]">
+          <button 
+            onClick={() => onSetMax(currentPosition.quantity)} 
+            className="ml-2 text-[10px] text-[#ef5350] hover:text-[#e53935]"
+          >
             Max
           </button>
         )}
@@ -248,7 +325,7 @@ function BalanceInfo({ activeTab, balance, currentPosition, symbol, livePrice, o
   );
 }
 
-function LimitPriceInput({ limitPrice, livePrice, onChange }: any) {
+function LimitPriceInput({ limitPrice, livePrice, onChange }: LimitPriceInputProps) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] font-semibold uppercase tracking-wider text-[#787b86]">Limit Price (USD)</label>
@@ -269,7 +346,7 @@ function LimitPriceInput({ limitPrice, livePrice, onChange }: any) {
   );
 }
 
-function MarketPriceDisplay({ livePrice, isConnected }: any) {
+function MarketPriceDisplay({ livePrice, isConnected }: MarketPriceDisplayProps) {
   return (
     <div className="flex flex-col gap-1">
       <label className="text-[10px] font-semibold uppercase tracking-wider text-[#787b86]">Market Price (USD)</label>
@@ -283,7 +360,17 @@ function MarketPriceDisplay({ livePrice, isConnected }: any) {
   );
 }
 
-function QuantityInput({ symbol, quantity, availableQty, quickAmounts, onChange, activeTab, balance, livePrice, currentPosition }: any) {
+function QuantityInput({ 
+  symbol, 
+  quantity, 
+  availableQty, 
+  quickAmounts, 
+  onChange, 
+  activeTab, 
+  balance, 
+  livePrice, 
+  currentPosition 
+}: QuantityInputProps) {
   const baseCurrency = symbol.replace("USDT", "");
   const maxAllowed = activeTab === "BUY" ? balance.cash / livePrice : currentPosition?.quantity || 0;
 
@@ -322,7 +409,7 @@ function QuantityInput({ symbol, quantity, availableQty, quickAmounts, onChange,
   );
 }
 
-function PriceImpactWarning({ impact, estimatedPrice }: any) {
+function PriceImpactWarning({ impact, estimatedPrice }: PriceImpactWarningProps) {
   return (
     <div className="bg-yellow-500/10 border border-yellow-500/30 rounded p-2 text-xs">
       <div className="text-yellow-500 font-semibold mb-1">⚠️ Price Impact Warning</div>
@@ -335,7 +422,7 @@ function PriceImpactWarning({ impact, estimatedPrice }: any) {
   );
 }
 
-function TotalCost({ totalCost, orderType }: any) {
+function TotalCost({ totalCost, orderType }: TotalCostProps) {
   return (
     <div className="flex justify-between items-center text-sm border-t border-[#2a2e39]/50 pt-3">
       <span className="text-[#787b86] font-medium">Total:</span>
@@ -347,7 +434,16 @@ function TotalCost({ totalCost, orderType }: any) {
   );
 }
 
-function ExecuteButton({ activeTab, quantity, availableQty, orderType, limitPrice, isExecuting, symbol, onClick }: any) {
+function ExecuteButton({ 
+  activeTab, 
+  quantity, 
+  availableQty, 
+  orderType, 
+  limitPrice, 
+  isExecuting, 
+  symbol, 
+  onClick 
+}: ExecuteButtonProps) {
   const disabled =
     parseFloat(quantity) <= 0 ||
     isNaN(parseFloat(quantity)) ||
@@ -362,7 +458,9 @@ function ExecuteButton({ activeTab, quantity, availableQty, orderType, limitPric
       onClick={onClick}
       disabled={disabled}
       className={`w-full rounded-lg py-3 text-sm font-bold uppercase tracking-wide text-white transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg ${
-        activeTab === "BUY" ? "bg-[#2962ff] hover:bg-[#1e53e5] shadow-[#2962ff]/20" : "bg-[#ef5350] hover:bg-[#e53935] shadow-[#ef5350]/20"
+        activeTab === "BUY" 
+          ? "bg-[#2962ff] hover:bg-[#1e53e5] shadow-[#2962ff]/20" 
+          : "bg-[#ef5350] hover:bg-[#e53935] shadow-[#ef5350]/20"
       }`}
     >
       {isExecuting ? "Processing..." : `${activeTab} ${baseCurrency}${orderType === "LIMIT" ? " @ Limit" : ""}`}
@@ -370,7 +468,7 @@ function ExecuteButton({ activeTab, quantity, availableQty, orderType, limitPric
   );
 }
 
-function RecentOrders({ symbol, filteredHistory }: any) {
+function RecentOrders({ symbol, filteredHistory }: RecentOrdersProps) {
   const baseCurrency = symbol.replace("USDT", "");
 
   return (
@@ -389,7 +487,7 @@ function RecentOrders({ symbol, filteredHistory }: any) {
           </div>
         ) : (
           <div className="space-y-2 mt-2">
-            {filteredHistory.map((log: any, idx: number) => (
+            {filteredHistory.map((log, idx) => (
               <div
                 key={`${log.id}-${idx}`}
                 className="flex flex-col gap-1 rounded-lg bg-[#1e222d]/50 p-3 text-xs border border-[#2a2e39]/50 hover:bg-[#1e222d] transition-all"

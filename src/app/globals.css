@@ -24,3 +24,175 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* src/app/globals.css */
+
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+  /* Scrollbar colors */
+  --scrollbar-track: #1c2030;
+  --scrollbar-thumb: #2a2e39;
+  --scrollbar-thumb-hover: #2962ff;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+    --scrollbar-track: #1c2030;
+    --scrollbar-thumb: #2a2e39;
+    --scrollbar-thumb-hover: #2962ff;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* ============================================
+   GLOBAL CUSTOM SCROLLBAR STYLES
+   ============================================ */
+
+/* For WebKit browsers (Chrome, Safari, Edge) */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+  transition: background 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Horizontal scrollbar specific */
+::-webkit-scrollbar:horizontal {
+  height: 6px;
+}
+
+::-webkit-scrollbar-track:horizontal {
+  background: var(--scrollbar-track);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:horizontal {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:horizontal:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Vertical scrollbar specific */
+::-webkit-scrollbar:vertical {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track:vertical {
+  background: var(--scrollbar-track);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:vertical {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:vertical:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+/* Firefox support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+}
+
+/* Optional: Hide scrollbar when not scrolling (for cleaner look) */
+@media (min-width: 768px) {
+  .hide-scrollbar {
+    scrollbar-width: none;
+  }
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/* Chart specific container overrides (if needed) */
+.chart-container {
+  scrollbar-width: thin;
+}
+
+/* Preset bar specific overrides */
+.preset-bar {
+  scrollbar-width: thin;
+}
+
+.preset-bar::-webkit-scrollbar {
+  height: 4px;
+}
+
+/* Custom class for extremely thin scrollbars */
+.scrollbar-thin {
+  scrollbar-width: thin;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+/* Custom class for hidden scrollbars */
+.scrollbar-hidden {
+  scrollbar-width: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+/* Untuk scrollbar yang lebih tipis (sidebar, order panel) */
+.scrollbar-sm::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+/* Untuk scrollbar yang lebih tebal (chart area) */
+.scrollbar-lg::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+/* Untuk area yang tidak perlu scrollbar */
+.scrollbar-none {
+  scrollbar-width: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}

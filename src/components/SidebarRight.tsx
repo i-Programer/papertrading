@@ -5,7 +5,33 @@ import { useState, useEffect } from "react";
 import { Search, Loader2, Star, TrendingUp, TrendingDown, Volume2, Clock } from "lucide-react";
 import { useTradingStore } from "@/stores/useTradingStore";
 import { useMarketData, type ExtendedProduct } from "@/hooks/useMarketData";
+import type { Position } from "@/types/trading";
 
+// ============ TYPES ============
+type TabId = "all" | "watchlist" | "gainers" | "losers";
+type SortByType = "name" | "price" | "change" | "volume";
+
+interface Tab {
+  id: TabId;
+  label: string;
+  icon: typeof Star | typeof TrendingUp | typeof TrendingDown | null;
+}
+
+interface SortOption {
+  id: SortByType;
+  label: string;
+}
+
+interface MarketRowProps {
+  coin: ExtendedProduct;
+  isSelected: boolean;
+  isInWatchlist: boolean;
+  onSelect: () => void;
+  onToggleWatchlist: () => void;
+  position: Position | undefined;
+}
+
+// ============ HELPER FUNCTIONS ============
 function formatAssetPrice(value: number): string {
   if (value >= 1000) return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
   if (value >= 1) return value.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 4 });
@@ -19,6 +45,7 @@ function formatCompactNumber(value: number): string {
   return value.toLocaleString();
 }
 
+// ============ MAIN COMPONENT ============
 export default function SidebarRight() {
   const activeSymbol = useTradingStore((state) => state.symbol);
   const setSymbol = useTradingStore((state) => state.setSymbol);
@@ -27,11 +54,11 @@ export default function SidebarRight() {
   const { products, isLoading, watchlist, addToWatchlist, removeFromWatchlist, isInWatchlist } =
     useMarketData(activeSymbol);
 
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<"all" | "watchlist" | "gainers" | "losers">("all");
-  const [sortBy, setSortBy] = useState<"name" | "price" | "change" | "volume">("name");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [activeTab, setActiveTab] = useState<TabId>("all");
+  const [sortBy, setSortBy] = useState<SortByType>("name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
-  const [isMounted, setIsMounted] = useState(false);
+  const [isMounted, setIsMounted] = useState<boolean>(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -79,12 +106,28 @@ export default function SidebarRight() {
       case "losers":
         filtered = filtered.filter((coin) => (coin.priceChangePercent24h || 0) < 0);
         break;
+      default:
+        break;
     }
 
     return sortProducts(filtered).slice(0, 100);
   };
 
-  const displayedProducts = getDisplayedProducts();
+  const displayedProducts: ExtendedProduct[] = getDisplayedProducts();
+
+  const tabs: Tab[] = [
+    { id: "all", label: "All", icon: null },
+    { id: "watchlist", label: "Watchlist", icon: Star },
+    { id: "gainers", label: "Gainers", icon: TrendingUp },
+    { id: "losers", label: "Losers", icon: TrendingDown },
+  ];
+
+  const sortOptions: SortOption[] = [
+    { id: "name", label: "Name" },
+    { id: "price", label: "Price" },
+    { id: "change", label: "Change" },
+    { id: "volume", label: "Volume" },
+  ];
 
   if (!isMounted) {
     return (
@@ -120,15 +163,10 @@ export default function SidebarRight() {
 
       {/* Tabs */}
       <div className="flex border-b border-[#2a2e39]">
-        {[
-          { id: "all", label: "All", icon: null },
-          { id: "watchlist", label: "Watchlist", icon: Star },
-          { id: "gainers", label: "Gainers", icon: TrendingUp },
-          { id: "losers", label: "Losers", icon: TrendingDown },
-        ].map((tab) => (
+        {tabs.map((tab) => (
           <button
             key={tab.id}
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            onClick={() => setActiveTab(tab.id)}
             className={`flex-1 flex items-center justify-center gap-1.5 py-2.5 text-xs font-semibold uppercase tracking-wider transition-all ${
               activeTab === tab.id
                 ? "border-b-2 border-[#2962ff] text-[#2962ff] bg-[#2962ff]/5"
@@ -143,19 +181,14 @@ export default function SidebarRight() {
 
       {/* Sort Controls */}
       <div className="flex gap-1 p-2 border-b border-[#2a2e39] bg-[#1c2030]/20">
-        {[
-          { id: "name", label: "Name" },
-          { id: "price", label: "Price" },
-          { id: "change", label: "Change" },
-          { id: "volume", label: "Volume" },
-        ].map((sort) => (
+        {sortOptions.map((sort) => (
           <button
             key={sort.id}
             onClick={() => {
               if (sortBy === sort.id) {
                 setSortOrder(sortOrder === "asc" ? "desc" : "asc");
               } else {
-                setSortBy(sort.id as typeof sortBy);
+                setSortBy(sort.id);
                 setSortOrder("asc");
               }
             }}
@@ -169,7 +202,7 @@ export default function SidebarRight() {
         ))}
       </div>
 
-      {/* Market List - Added custom scrollbar classes */}
+      {/* Market List */}
       <div className="flex-1 overflow-y-auto sidebar-scrollbar">
         {isLoading ? (
           <div className="flex h-64 flex-col items-center justify-center gap-3 text-xs text-[#787b86]">
@@ -231,7 +264,7 @@ export default function SidebarRight() {
         
         .sidebar-scrollbar::-webkit-scrollbar {
           width: 6px;
-          height: 0px; /* Hide horizontal scrollbar */
+          height: 0px;
         }
         
         .sidebar-scrollbar::-webkit-scrollbar-track {
@@ -250,12 +283,10 @@ export default function SidebarRight() {
           background: #2962ff;
         }
         
-        /* Hide horizontal scrollbar completely */
         .sidebar-scrollbar::-webkit-scrollbar-corner {
           background: transparent;
         }
         
-        /* Optional: Add a subtle gradient effect when scrolling */
         .sidebar-scrollbar {
           background: linear-gradient(to bottom, transparent 0%, rgba(41, 98, 255, 0.05) 100%);
         }
@@ -264,7 +295,7 @@ export default function SidebarRight() {
   );
 }
 
-// Sub-component for individual market row
+// ============ SUB-COMPONENT ============
 function MarketRow({
   coin,
   isSelected,
@@ -272,14 +303,7 @@ function MarketRow({
   onSelect,
   onToggleWatchlist,
   position,
-}: {
-  coin: ExtendedProduct;
-  isSelected: boolean;
-  isInWatchlist: boolean;
-  onSelect: () => void;
-  onToggleWatchlist: () => void;
-  position?: any;
-}) {
+}: MarketRowProps) {
   const currentPrice = coin.currentPrice;
   const priceChange = coin.priceChangePercent24h || 0;
   const isPositive = priceChange >= 0;
@@ -330,7 +354,7 @@ function MarketRow({
         </div>
         <div className="flex items-center justify-between text-[10px] text-[#787b86]">
           <div className="flex items-center gap-3">
-            {hasPosition && (
+            {hasPosition && position && (
               <div className="flex items-center gap-1 text-[#2962ff]">
                 <Volume2 className="h-2.5 w-2.5" />
                 <span>{position.quantity.toFixed(4)}</span>
@@ -343,7 +367,7 @@ function MarketRow({
               </div>
             )}
           </div>
-          {hasPosition && (
+          {hasPosition && position && (
             <div className={`font-semibold ${position.pnl >= 0 ? "text-[#26a69a]" : "text-[#ef5350]"}`}>
               ${Math.abs(position.pnl).toFixed(2)}
             </div>

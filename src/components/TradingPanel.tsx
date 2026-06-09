@@ -6,12 +6,48 @@ import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign, PieChart,
 import { useTradingStore } from "@/stores/useTradingStore";
 import { formatCurrency, pnlColorClass } from "@/utils/format";
 import { useUser } from "@clerk/nextjs";
+import type { Position, UserBalance } from "@/types/trading";
 
+// ============ TYPES ============
 interface TradingPanelProps {
   isOpen: boolean;
   onToggle: () => void;
 }
 
+interface StatCardProps {
+  title: string;
+  value: string;
+  subtitle: string;
+  icon: React.ReactNode;
+  valueClassName?: string;
+  progress?: number;
+}
+
+interface ResetButtonProps {
+  showResetConfirm: boolean;
+  onReset: () => void;
+  isResetting: boolean;
+}
+
+interface PositionRowProps {
+  position: Position;
+  isExpanded: boolean;
+  onToggle: () => void;
+}
+
+interface PortfolioSummaryProps {
+  bestPerformer: Position | { pnl: number; symbol: string };
+  worstPerformer: Position | { pnl: number; symbol: string };
+  totalInvested: number;
+  totalCurrentValue: number;
+}
+
+interface BestPerformerType {
+  pnl: number;
+  symbol: string;
+}
+
+// ============ MAIN COMPONENT ============
 export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
   const balance = useTradingStore((state) => state.balance);
   const positions = useTradingStore((state) => state.positions);
@@ -23,17 +59,17 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
   
   const { isSignedIn, user } = useUser();
   
-  const [isMounted, setIsMounted] = useState(false);
+  const [isMounted, setIsMounted] = useState<boolean>(false);
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
-  const [showResetConfirm, setShowResetConfirm] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
+  const [showResetConfirm, setShowResetConfirm] = useState<boolean>(false);
+  const [isResetting, setIsResetting] = useState<boolean>(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Replace these calculations in TradingPanel component
+  // Calculations
   const totalInvested = positions.reduce((sum, pos) => {
     const entryPrice = pos.entryPrice || 0;
     const quantity = pos.quantity || 0;
@@ -41,15 +77,15 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
   }, 0);
 
   const totalCurrentValue = positions.reduce((sum, pos) => {
-    const currentPrice = pos.currentPrice || pos.currentPrice || pos.entryPrice || pos.entryPrice || 0;
+    const currentPrice = pos.currentPrice || pos.entryPrice || 0;
     const quantity = pos.quantity || 0;
     return sum + (currentPrice * quantity);
   }, 0);
 
   const totalPnL = positions.reduce((sum, pos) => {
     if (pos.pnl !== undefined && pos.pnl !== null) return sum + pos.pnl;
-    const entryPrice = pos.entryPrice || pos.entryPrice || 0;
-    const currentPrice = pos.currentPrice || pos.currentPrice || entryPrice;
+    const entryPrice = pos.entryPrice || 0;
+    const currentPrice = pos.currentPrice || entryPrice;
     const quantity = pos.quantity || 0;
     return sum + ((currentPrice - entryPrice) * quantity);
   }, 0);
@@ -61,14 +97,16 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
     return (winners / closedTrades.length) * 100;
   })();
   
+  const defaultBestPerformer: BestPerformerType = { pnl: -Infinity, symbol: "" };
   const bestPerformer = positions.reduce(
     (best, pos) => (pos.pnl > best.pnl ? pos : best),
-    positions[0] || { pnl: -Infinity, symbol: "" }
+    positions[0] || defaultBestPerformer
   );
   
+  const defaultWorstPerformer: BestPerformerType = { pnl: Infinity, symbol: "" };
   const worstPerformer = positions.reduce(
     (worst, pos) => (pos.pnl < worst.pnl ? pos : worst),
-    positions[0] || { pnl: Infinity, symbol: "" }
+    positions[0] || defaultWorstPerformer
   );
 
   const handleResetAccount = async () => {
@@ -84,11 +122,9 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
       const isGuest = profile.id === "demo-user";
       
       if (isGuest) {
-        // Guest mode: just reset local state
         resetAccount();
         alert("Account has been reset to $100,000 virtual cash");
       } else if (isSignedIn && user) {
-        // Authenticated mode: call backend API
         const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
         
         const response = await fetch(`${API_BASE}/api/reset-account`, {
@@ -99,17 +135,15 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
           },
         });
         
-        const data = await response.json();
+        const data = await response.json() as { success: boolean; error?: string };
         
         if (!response.ok) {
           throw new Error(data.error || "Failed to reset account");
         }
         
         if (data.success) {
-          // Reset local state
           resetAccount();
           
-          // Also refresh portfolio data from backend to ensure consistency
           const { fetchUserPortfolioFromDB } = await import("@/utils/dbSync");
           const dbData = await fetchUserPortfolioFromDB(user.id);
           
@@ -158,7 +192,6 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
         </span>
       </button>
 
-      {/* Changed overflow-scroll to overflow-y-auto to only show vertical scrollbar */}
       <div
         className={`overflow-y-auto border-t border-[#2a2e39] bg-[#131722] transition-all duration-300 ease-in-out custom-scrollbar ${
           isOpen ? "max-h-[400px] opacity-100" : "max-h-0 border-t-transparent opacity-0"
@@ -166,7 +199,7 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
         style={{ scrollbarWidth: 'thin', overflowX: 'hidden' }}
       >
         <div className="flex h-full flex-col">
-          {/* Stats Cards - Fixed height, no scroll */}
+          {/* Stats Cards */}
           <div className="shrink-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 p-4 border-b border-[#2a2e39] bg-gradient-to-r from-[#131722] to-[#1c2030]/30">
             <StatCard
               title="Cash Balance"
@@ -199,12 +232,15 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
               subtitle={`${positions.length} active position${positions.length !== 1 ? "s" : ""}`}
               progress={winRate}
             />
-            <ResetButton showResetConfirm={showResetConfirm} onReset={handleResetAccount} />
+            <ResetButton 
+              showResetConfirm={showResetConfirm} 
+              onReset={handleResetAccount}
+              isResetting={isResetting}
+            />
           </div>
 
           {/* Positions Table */}
           <div className="min-w-full">
-            {/* Sticky header */}
             <div className="sticky top-0 z-10 grid grid-cols-7 gap-2 px-4 py-2 border-b border-[#2a2e39] bg-[#1c2030] text-[10px] font-semibold uppercase tracking-wider text-[#787b86]">
               <div className="col-span-1">Symbol</div>
               <div className="col-span-1">Side</div>
@@ -241,8 +277,8 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
           </div>
         </div>
       </div>
-      
-      {/* Global styles for custom scrollbar */}
+
+      {/* Custom scrollbar styles */}
       <style jsx global>{`
         .custom-scrollbar {
           scrollbar-width: thin;
@@ -252,7 +288,7 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
         
         .custom-scrollbar::-webkit-scrollbar {
           width: 6px;
-          height: 0px; /* Hide horizontal scrollbar */
+          height: 0px;
         }
         
         .custom-scrollbar::-webkit-scrollbar-track {
@@ -270,7 +306,6 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
           background: #2962ff;
         }
         
-        /* Hide horizontal scrollbar completely */
         .custom-scrollbar::-webkit-scrollbar-corner {
           background: transparent;
         }
@@ -279,8 +314,9 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
   );
 }
 
-// Sub-components (StatCard, ResetButton, EmptyPositionsState, PositionRow, PortfolioSummary remain the same)
-function StatCard({ title, value, subtitle, icon, valueClassName, progress }: any) {
+// ============ SUB-COMPONENTS ============
+
+function StatCard({ title, value, subtitle, icon, valueClassName, progress }: StatCardProps) {
   return (
     <div className="bg-[#1c2030]/50 rounded-lg p-3 border border-[#2a2e39] hover:border-[#2962ff]/30 transition-all">
       <div className="flex items-center justify-between mb-1">
@@ -298,8 +334,7 @@ function StatCard({ title, value, subtitle, icon, valueClassName, progress }: an
   );
 }
 
-// Update ResetButton component
-function ResetButton({ showResetConfirm, onReset, isResetting }: any) {
+function ResetButton({ showResetConfirm, onReset, isResetting }: ResetButtonProps) {
   return (
     <div className="bg-[#1c2030]/50 rounded-lg p-3 border border-[#2a2e39] hover:border-[#ef5350]/30 transition-all">
       <button 
@@ -329,7 +364,7 @@ function EmptyPositionsState() {
   );
 }
 
-function PositionRow({ position, isExpanded, onToggle }: any) {
+function PositionRow({ position, isExpanded, onToggle }: PositionRowProps) {
   const pnlPercent = ((position.currentPrice - position.entryPrice) / position.entryPrice) * 100;
   const baseCurrency = position.symbol.replace("USDT", "");
   
@@ -394,7 +429,7 @@ function PositionRow({ position, isExpanded, onToggle }: any) {
   );
 }
 
-function PortfolioSummary({ bestPerformer, worstPerformer, totalInvested, totalCurrentValue }: any) {
+function PortfolioSummary({ bestPerformer, worstPerformer, totalInvested, totalCurrentValue }: PortfolioSummaryProps) {
   return (
     <div className="sticky bottom-0 border-t border-[#2a2e39] bg-[#1c2030]/95 backdrop-blur-sm px-4 py-3 mt-2">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
@@ -402,14 +437,18 @@ function PortfolioSummary({ bestPerformer, worstPerformer, totalInvested, totalC
           <div className="text-[#787b86] mb-1">Best Performer</div>
           <div className="font-bold text-[#26a69a]">
             {bestPerformer.symbol || "—"}
-            {bestPerformer.pnl > -Infinity && <span className="ml-2 text-[11px]">{formatCurrency(bestPerformer.pnl)}</span>}
+            {'pnl' in bestPerformer && bestPerformer.pnl > -Infinity && (
+              <span className="ml-2 text-[11px]">{formatCurrency(bestPerformer.pnl)}</span>
+            )}
           </div>
         </div>
         <div>
           <div className="text-[#787b86] mb-1">Worst Performer</div>
           <div className="font-bold text-[#ef5350]">
             {worstPerformer.symbol || "—"}
-            {worstPerformer.pnl < Infinity && <span className="ml-2 text-[11px]">{formatCurrency(worstPerformer.pnl)}</span>}
+            {'pnl' in worstPerformer && worstPerformer.pnl < Infinity && (
+              <span className="ml-2 text-[11px]">{formatCurrency(worstPerformer.pnl)}</span>
+            )}
           </div>
         </div>
         <div>
