@@ -1,3 +1,4 @@
+// src/services/marketService.ts
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export interface CandleData {
@@ -35,11 +36,11 @@ export const marketService = {
     
     return rawData.map((row: number[]) => ({
       time: Math.floor(row[0] / 1000),
-      open: parseFloat(row[1]),
-      high: parseFloat(row[2]),
-      low: parseFloat(row[3]),
-      close: parseFloat(row[4]),
-      volume: parseFloat(row[5]),
+      open: row[1],      // Already a number, no parseFloat needed
+      high: row[2],      // Already a number
+      low: row[3],       // Already a number
+      close: row[4],     // Already a number
+      volume: row[5],    // Already a number
     }));
   },
 
