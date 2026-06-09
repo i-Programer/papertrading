@@ -51,3 +51,39 @@ export interface AssetStats {
   volume24h: number;
   changePercent: number;
 }
+
+
+export interface ChartPreset {
+  label: string;
+  rangeSeconds: number;
+  granularity: number;
+  interval: string;
+  description?: string;
+}
+
+export interface LegendData {
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+  ma50: string;
+  ema20: string;
+  isPriceUp: boolean;
+}
+
+export interface VolumeDataPoint {
+  time: number;
+  value: number;
+  color: string;
+}
+
+export interface MADataPoint {
+  time: number;
+  value: number;
+}
+
+export interface EMADataPoint {
+  time: number;
+  value: number;
+}

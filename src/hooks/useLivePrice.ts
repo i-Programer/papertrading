@@ -4,7 +4,7 @@ import { wsManager, type TickerMessage } from "@/lib/websocket-manager";
 
 export function useLivePrice(symbol: string, onPriceUpdate?: (price: number) => void) {
   const [livePrice, setLivePrice] = useState<number>(67000);
-  const [isConnected, setIsConnected] = useState(false);
+  const [isConnected, setIsConnected] = useState(wsManager.getStatus() === "connected");
   const lastPriceRef = useRef<number>(67000);
 
   useEffect(() => {
@@ -27,7 +27,6 @@ export function useLivePrice(symbol: string, onPriceUpdate?: (price: number) => 
 
     // Ensure WebSocket is connected
     wsManager.connect(symbol);
-    setIsConnected(wsManager.getStatus() === "connected");
 
     return () => {
       unsubscribe();

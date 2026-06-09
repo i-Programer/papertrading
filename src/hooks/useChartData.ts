@@ -11,6 +11,33 @@ export interface ChartPreset {
   description?: string;
 }
 
+export interface LegendData {
+  open: string;
+  high: string;
+  low: string;
+  close: string;
+  volume: string;
+  ma50: string;
+  ema20: string;
+  isPriceUp: boolean;
+}
+
+interface VolumeDataPoint {
+  time: number;
+  value: number;
+  color: string;
+}
+
+interface MADataPoint {
+  time: number;
+  value: number;
+}
+
+interface EMADataPoint {
+  time: number;
+  value: number;
+}
+
 export const CHART_PRESETS: ChartPreset[] = [
   { label: "12H (1m)", rangeSeconds: 12 * 3600, granularity: 60, interval: "1m", description: "12 hours - 1 minute candles" },
   { label: "1D (3m)", rangeSeconds: 24 * 3600, granularity: 180, interval: "3m", description: "24 hours - 3 minute candles" },
@@ -86,9 +113,9 @@ const formatVolumeDisplay = (value: number): string => {
 
 export function useChartData(symbol: string, preset: ChartPreset) {
   const [candles, setCandles] = useState<CandleData[]>([]);
-  const [volumeData, setVolumeData] = useState<any[]>([]);
-  const [ma50Data, setMa50Data] = useState<any[]>([]);
-  const [ema20Data, setEma20Data] = useState<any[]>([]);
+  const [volumeData, setVolumeData] = useState<VolumeDataPoint[]>([]);
+  const [ma50Data, setMa50Data] = useState<MADataPoint[]>([]);
+  const [ema20Data, setEma20Data] = useState<EMADataPoint[]>([]);
   const [legend, setLegend] = useState<LegendData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [realtimePrice, setRealtimePrice] = useState<number | null>(null);
