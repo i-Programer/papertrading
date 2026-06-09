@@ -1,6 +1,3 @@
-// src/services/marketService.ts
-import { supabase } from "@/utils/supabase";
-
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
 
 export interface CandleData {
