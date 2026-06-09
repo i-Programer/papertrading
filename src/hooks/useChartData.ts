@@ -172,10 +172,10 @@ export function useChartData(symbol: string, preset: ChartPreset) {
       const last = uniqueCandles[uniqueCandles.length - 1];
       const lastVol = volumes[volumes.length - 1];
       setLegend({
-        open: last.open.toFixed(2),
-        high: last.high.toFixed(2),
-        low: last.low.toFixed(2),
-        close: last.close.toFixed(2),
+        open: ( last.open as number).toFixed(2),
+        high: ( last.high as number).toFixed(2),
+        low: ( last.low as number).toFixed(2),
+        close: ( last.close as number).toFixed(2),
         volume: lastVol ? formatVolumeDisplay(lastVol.value) : "-",
         ma50: ma50Data.length > 0 ? ma50Data[ma50Data.length - 1]?.value.toFixed(2) || "-" : "-",
         ema20: ema20Data.length > 0 ? ema20Data[ema20Data.length - 1]?.value.toFixed(2) || "-" : "-",

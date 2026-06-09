@@ -34,13 +34,13 @@ export const marketService = {
     if (!response.ok) throw new Error(`Failed to fetch candles: ${response.status}`);
     const rawData = await response.json();
     
-    return rawData.map((row: number[]) => ({
+    return rawData.map((row: any[]) => ({
       time: Math.floor(row[0] / 1000),
-      open: row[1],      // Already a number, no parseFloat needed
-      high: row[2],      // Already a number
-      low: row[3],       // Already a number
-      close: row[4],     // Already a number
-      volume: row[5],    // Already a number
+      open: parseFloat(row[1]),   // ← Must parse because API returns strings
+      high: parseFloat(row[2]),   // ← Must parse because API returns strings
+      low: parseFloat(row[3]),    // ← Must parse because API returns strings
+      close: parseFloat(row[4]),  // ← Must parse because API returns strings
+      volume: parseFloat(row[5]), // ← Must parse because API returns strings
     }));
   },
 
