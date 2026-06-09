@@ -29,7 +29,7 @@ class WebSocketManager {
   private ws: WebSocket | null = null;
   private handlers: Map<string, Set<MessageHandler>> = new Map();
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 3;
+  private maxReconnectAttempts = 5;
   private reconnectDelay = 2000;
   private currentSymbol = "BTCUSDT";
   private statusListeners: Set<(status: ConnectionStatus) => void> = new Set();
@@ -37,52 +37,61 @@ class WebSocketManager {
   private messageId = 1;
   private subscribedStreams: Set<string> = new Set();
   private isConnecting = false;
-  private pendingSubscriptions: string[] = [];
+  
+  // Priority queue for messages
+  private messageQueue: Array<{ priority: 'high' | 'low'; data: TickerMessage; timestamp: number }> = [];
+  private isProcessingQueue = false;
+  private lastHighPriorityUpdate = 0;
+  private lowPriorityInterval: NodeJS.Timeout | null = null;
 
   /**
    * Connect to the backend WebSocket proxy (single connection)
+   * Now only subscribes to the current symbol by default
    */
-  connect(symbol: string): void {
+  connect(symbol: string, subscribeImmediately: boolean = true): void {
     this.currentSymbol = symbol;
     
-    // If already connected or connecting, just update the current symbol
-    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
-      // console.log(`WebSocket already ${this.ws.readyState === WebSocket.OPEN ? 'connected' : 'connecting'}, using existing connection`);
-      if (this.ws.readyState === WebSocket.OPEN) {
+    // If already connected, just update subscription
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      if (subscribeImmediately) {
         this.sendSubscribe(symbol);
       }
       return;
     }
     
-    // Prevent multiple connection attempts
+    // If already connecting, wait
     if (this.isConnecting) {
-      // console.log('Connection already in progress, skipping...');
       return;
     }
     
     this.isConnecting = true;
     const WS_URL = process.env.NEXT_PUBLIC_WS_URL || `ws://localhost:5000`;
     
-    // console.log(`Creating WebSocket connection to backend proxy: ${WS_URL}`);
     this.ws = new WebSocket(WS_URL);
     this.setupEventHandlers();
   }
 
   /**
-   * Subscribe to multiple markets (for sidebar)
+   * Subscribe to multiple markets (for sidebar - OPTIONAL, use with caution)
+   * Now with rate limiting and priority management
    */
   subscribeToMarkets(symbols: string[]): void {
     if (!symbols || symbols.length === 0) return;
+    
+    // CRITICAL: Limit subscriptions to avoid flooding
+    const MAX_SUBSCRIPTIONS = 10;
+    if (symbols.length > MAX_SUBSCRIPTIONS) {
+      console.warn(`[WS] Limiting subscriptions from ${symbols.length} to ${MAX_SUBSCRIPTIONS}`);
+      symbols = symbols.slice(0, MAX_SUBSCRIPTIONS);
+    }
     
     const streams = symbols.map(s => `${s.toLowerCase()}@ticker`);
     const newStreams = streams.filter(stream => !this.subscribedStreams.has(stream));
     
     if (newStreams.length === 0) return;
     
-    // console.log(`Subscribing to ${newStreams.length} new markets`);
     newStreams.forEach(stream => this.subscribedStreams.add(stream));
     
-    // If connection is ready, send subscription immediately
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       const subscribeMsg = {
         method: "SUBSCRIBE",
@@ -90,57 +99,104 @@ class WebSocketManager {
         id: this.messageId++
       };
       this.ws.send(JSON.stringify(subscribeMsg));
-    } else {
-      // Queue subscription for when connection is ready
-      this.pendingSubscriptions.push(...newStreams);
-      // Trigger connection if not already connecting
-      this.connect(this.currentSymbol);
+      console.log(`[WS] Subscribed to ${newStreams.length} additional markets`);
     }
   }
 
   /**
-   * Send subscribe message through backend proxy
+   * Send subscribe message for a single symbol (HIGH PRIORITY)
    */
   private sendSubscribe(symbol: string): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     
     const stream = `${symbol.toLowerCase()}@ticker`;
     
-    // Only subscribe if not already subscribed
-    if (!this.subscribedStreams.has(stream)) {
-      const subscribeMsg: SubscribeMessage = {
-        method: "SUBSCRIBE",
-        params: [stream],
+    // Unsubscribe from previous symbol first to avoid duplicates
+    if (this.subscribedStreams.size > 0) {
+      const previousStreams = Array.from(this.subscribedStreams);
+      const unsubscribeMsg = {
+        method: "UNSUBSCRIBE",
+        params: previousStreams,
         id: this.messageId++
       };
-      this.ws.send(JSON.stringify(subscribeMsg));
-      this.subscribedStreams.add(stream);
-      // console.log(`Sent subscribe for ${symbol}`);
+      this.ws.send(JSON.stringify(unsubscribeMsg));
+      this.subscribedStreams.clear();
+      console.log(`[WS] Unsubscribed from ${previousStreams.length} previous streams`);
+    }
+    
+    // Subscribe to new symbol
+    const subscribeMsg: SubscribeMessage = {
+      method: "SUBSCRIBE",
+      params: [stream],
+      id: this.messageId++
+    };
+    this.ws.send(JSON.stringify(subscribeMsg));
+    this.subscribedStreams.add(stream);
+    console.log(`[WS] Subscribed to ${symbol} (high priority)`);
+  }
+
+  /**
+   * Process message queue with priority
+   */
+  private processQueue(): void {
+    if (this.isProcessingQueue) return;
+    
+    this.isProcessingQueue = true;
+    
+    try {
+      // Sort by priority (high first) and timestamp
+      const sorted = [...this.messageQueue].sort((a, b) => {
+        if (a.priority === 'high' && b.priority === 'low') return -1;
+        if (a.priority === 'low' && b.priority === 'high') return 1;
+        return a.timestamp - b.timestamp;
+      });
+      
+      // Process high priority messages immediately
+      const highPriorityMessages = sorted.filter(m => m.priority === 'high');
+      const lowPriorityMessages = sorted.filter(m => m.priority === 'low');
+      
+      // High priority - process all immediately
+      highPriorityMessages.forEach(msg => {
+        this.notifyHandlers(msg.data);
+      });
+      
+      // Low priority - throttle to max 10 per second
+      const now = Date.now();
+      const timeSinceLastUpdate = now - this.lastHighPriorityUpdate;
+      
+      if (lowPriorityMessages.length > 0 && timeSinceLastUpdate > 100) {
+        // Process only first 5 low priority messages per batch
+        const toProcess = lowPriorityMessages.slice(0, 5);
+        toProcess.forEach(msg => {
+          this.notifyHandlers(msg.data);
+        });
+        this.lastHighPriorityUpdate = now;
+      }
+      
+      // Clear processed messages
+      this.messageQueue = [];
+      
+    } finally {
+      this.isProcessingQueue = false;
     }
   }
 
   /**
-   * Process any pending subscriptions
+   * Notify all handlers for a channel
    */
-  private processPendingSubscriptions(): void {
-    if (this.pendingSubscriptions.length === 0) return;
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    
-    const subscriptions = [...this.pendingSubscriptions];
-    this.pendingSubscriptions = [];
-    
-    const subscribeMsg = {
-      method: "SUBSCRIBE",
-      params: subscriptions,
-      id: this.messageId++
-    };
-    this.ws.send(JSON.stringify(subscribeMsg));
-    // console.log(`Processed ${subscriptions.length} pending subscriptions`);
+  private notifyHandlers(data: TickerMessage): void {
+    const handlers = this.handlers.get("ticker");
+    if (handlers && handlers.size > 0) {
+      handlers.forEach(handler => {
+        try {
+          handler(data);
+        } catch (error) {
+          console.error("[WS] Handler error:", error);
+        }
+      });
+    }
   }
 
-  /**
-   * Update connection status and notify all listeners
-   */
   private setStatus(status: ConnectionStatus): void {
     if (this.currentStatus === status) return;
     this.currentStatus = status;
@@ -154,91 +210,104 @@ class WebSocketManager {
     if (!this.ws) return;
 
     this.ws.onopen = (): void => {
-      // console.log("WebSocket connected to backend proxy successfully");
+      console.log("[WS] Connected to backend proxy");
       this.setStatus("connected");
       this.reconnectAttempts = 0;
       this.isConnecting = false;
       
-      // Process any pending subscriptions
-      this.processPendingSubscriptions();
-      
       // Subscribe to current symbol
       this.sendSubscribe(this.currentSymbol);
+      
+      // Start low priority interval processing
+      if (this.lowPriorityInterval) clearInterval(this.lowPriorityInterval);
+      this.lowPriorityInterval = setInterval(() => {
+        if (this.messageQueue.length > 0) {
+          this.processQueue();
+        }
+      }, 500);
     };
 
-    const DEBUG = true;
-    function debugLog(...args: any[]) {
-        if (DEBUG) {
-            // console.log('[WS DEBUG]', new Date().toISOString(), ...args);
-        }
-    }
     this.ws.onmessage = (event: MessageEvent): void => {
-        try {
-            const data = JSON.parse(event.data);
-            
-            debugLog('Received message type:', data.e || data.event || 'unknown', data);
-            
-            // Handle backend proxy events
-            if (data.event === 'connected') {
-                // console.log('Backend proxy confirmed connection:', data.message);
-                return;
-            }
-            
-            if (data.event === 'disconnected') {
-                console.warn('Backend proxy disconnected from Binance:', data.reason);
-                this.setStatus("disconnected");
-                return;
-            }
-            
-            if (data.event === 'error') {
-                console.error('Backend proxy error:', data.message);
-                return;
-            }
-            
-            // Handle ticker messages from Binance
-            if (data.e === "24hrTicker" && data.c) {
-                debugLog(`Processing ticker for ${data.s}: price=${data.c}`);
-                
-                const tickerMessage: TickerMessage = {
-                    type: "ticker",
-                    price: data.c,
-                    last_size: data.v,
-                    product_id: this.toFrontendSymbol(data.s),
-                    time: new Date(data.E).toISOString(),
-                    bid: data.b,
-                    ask: data.a,
-                    volume: data.v,
-                    open: data.o,
-                    high: data.h,
-                    low: data.l,
-                    change: data.p,
-                    changePercent: data.P
-                };
-                
-                const handlers = this.handlers.get("ticker");
-                if (handlers && handlers.size > 0) {
-                    debugLog(`Notifying ${handlers.size} ticker handlers`);
-                    handlers.forEach(handler => handler(tickerMessage));
-                } else {
-                    debugLog('No ticker handlers registered');
-                }
-            }
-            
-            // Handle subscription response
-            if (data.result !== undefined) {
-                // console.log("Subscription confirmed:", data);
-            }
-        } catch (error) {
-            console.error("Error parsing WebSocket message:", error);
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Handle backend proxy events
+        if (data.event === 'connected') {
+          console.log("[WS] Backend proxy connected:", data.message);
+          return;
         }
+        
+        if (data.event === 'disconnected') {
+          console.warn("[WS] Backend proxy disconnected:", data.reason);
+          this.setStatus("disconnected");
+          return;
+        }
+        
+        if (data.event === 'error') {
+          console.error("[WS] Backend proxy error:", data.message);
+          return;
+        }
+        
+        // Handle ticker messages from Binance
+        if ((data.e === "24hrTicker" || data.stream?.includes('@ticker')) && data.c) {
+          // Get symbol from data.s (Binance format) or from stream
+          let symbol = data.s;
+          if (data.stream) {
+            symbol = data.stream.split('@')[0].toUpperCase();
+          }
+          
+          const tickerMessage: TickerMessage = {
+            type: "ticker",
+            price: data.c,
+            last_size: data.v || "0",
+            product_id: symbol, // Keep as is (BTCUSDT format)
+            time: new Date(data.E).toISOString(),
+            bid: data.b,
+            ask: data.a,
+            volume: data.v,
+            open: data.o,
+            high: data.h,
+            low: data.l,
+            change: data.p,
+            changePercent: data.P
+          };
+          
+          // Determine priority based on whether it's the current symbol
+          const priority = symbol === this.currentSymbol ? 'high' : 'low';
+          
+          // Add to queue instead of processing immediately
+          this.messageQueue.push({
+            priority,
+            data: tickerMessage,
+            timestamp: Date.now()
+          });
+          
+          // Process high priority immediately
+          if (priority === 'high') {
+            this.processQueue();
+          }
+        }
+        
+        // Handle subscription response
+        if (data.result !== undefined) {
+          console.log("[WS] Subscription confirmed:", data.result);
+        }
+      } catch (error) {
+        console.error("[WS] Error parsing message:", error);
+      }
     };
 
     this.ws.onclose = (event: CloseEvent): void => {
-      // console.log(`WebSocket disconnected: ${event.code} - ${event.reason}`);
+      console.log(`[WS] Disconnected: ${event.code} - ${event.reason}`);
       this.setStatus("disconnected");
       this.isConnecting = false;
       
-      // Clear all subscriptions on disconnect
+      if (this.lowPriorityInterval) {
+        clearInterval(this.lowPriorityInterval);
+        this.lowPriorityInterval = null;
+      }
+      
+      // Clear subscriptions
       this.subscribedStreams.clear();
       
       // Reconnect if not manual disconnect
@@ -248,20 +317,10 @@ class WebSocketManager {
     };
 
     this.ws.onerror = (error: Event): void => {
-      console.error("WebSocket error:", error);
+      console.error("[WS] Error:", error);
       this.setStatus("disconnected");
       this.isConnecting = false;
     };
-  }
-
-  /**
-   * Convert Binance symbol format to frontend format
-   */
-  private toFrontendSymbol(symbol: string): string {
-    if (symbol.endsWith('USDT') || symbol.endsWith('USDC')) {
-      return symbol;
-    }
-    return symbol;
   }
 
   /**
@@ -269,12 +328,12 @@ class WebSocketManager {
    */
   private reconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error("Max reconnection attempts reached. Please refresh the page.");
+      console.error("[WS] Max reconnection attempts reached");
       return;
     }
 
     const delay = this.reconnectDelay * Math.pow(2, this.reconnectAttempts);
-    // console.log(`Reconnecting in ${delay}ms... (Attempt ${this.reconnectAttempts + 1}/${this.maxReconnectAttempts})`);
+    console.log(`[WS] Reconnecting in ${delay}ms... (Attempt ${this.reconnectAttempts + 1})`);
     
     setTimeout(() => {
       this.reconnectAttempts++;
@@ -314,19 +373,34 @@ class WebSocketManager {
   }
 
   /**
+   * Update current symbol (re-subscribe)
+   */
+  updateSymbol(newSymbol: string): void {
+    if (this.currentSymbol === newSymbol) return;
+    this.currentSymbol = newSymbol;
+    
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.sendSubscribe(newSymbol);
+    }
+  }
+
+  /**
    * Manually disconnect WebSocket
    */
   disconnect(): void {
-    this.reconnectAttempts = this.maxReconnectAttempts; // Prevent auto-reconnect
+    this.reconnectAttempts = this.maxReconnectAttempts;
+    if (this.lowPriorityInterval) {
+      clearInterval(this.lowPriorityInterval);
+      this.lowPriorityInterval = null;
+    }
     if (this.ws) {
-      // console.log("Manually disconnecting WebSocket");
       this.ws.close();
       this.ws = null;
     }
     this.handlers.clear();
     this.statusListeners.clear();
     this.subscribedStreams.clear();
-    this.pendingSubscriptions = [];
+    this.messageQueue = [];
     this.isConnecting = false;
     this.setStatus("disconnected");
   }

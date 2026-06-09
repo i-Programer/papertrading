@@ -1,4 +1,4 @@
-// src/components/ChartArea.tsx
+// src/components/ChartArea.tsx (CORRECTED FIXED VERSION)
 "use client";
 
 import { useEffect, useRef, useState } from "react";
@@ -31,23 +31,42 @@ export default function ChartArea() {
   const maSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const emaSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
   const [isMounted, setIsMounted] = useState(false);
+  const [legendData, setLegendData] = useState<LegendData | null>(null);
+  const lastValidDataRef = useRef<LegendData | null>(null);
+  const hasInitialDataRef = useRef(false); // Track if we've done initial fit
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // Render chart when data changes
+  // CREATE CHART - ONLY ONCE (when symbol/preset changes)
   useEffect(() => {
-    if (!isMounted || !chartContainerRef.current || candles.length === 0) return;
+    if (!isMounted || !chartContainerRef.current) return;
+
+    // Clean up previous chart
+    if (chartRef.current) {
+      chartRef.current.remove();
+      chartRef.current = null;
+    }
 
     // Create chart
     const chart = createChart(chartContainerRef.current, {
       layout: { background: { type: ColorType.Solid, color: "#131722" }, textColor: "#d1d4dc" },
       grid: { vertLines: { color: "#2a2e39" }, horzLines: { color: "#2a2e39" } },
       rightPriceScale: { borderColor: "#2a2e39" },
-      timeScale: { borderColor: "#2a2e39", timeVisible: true, secondsVisible: false },
+      timeScale: { 
+        borderColor: "#2a2e39", 
+        timeVisible: true, 
+        secondsVisible: false,
+        // ✅ Ensure interactions are enabled
+        fixLeftEdge: false,
+        fixRightEdge: false,
+      },
       width: chartContainerRef.current.clientWidth,
       height: chartContainerRef.current.clientHeight,
+      // ✅ Enable scroll/zoom interactions
+      handleScroll: { mouseWheel: true, pressedMouseMove: true },
+      handleScale: { mouseWheel: true, pinch: true },
     });
     chartRef.current = chart;
 
@@ -79,39 +98,44 @@ export default function ChartArea() {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    // Set data with validation
-    const validatedCandles = candles.filter((candle, index, arr) => {
-      if (index > 0 && candle.time <= arr[index - 1].time) {
-        console.warn(`Skipping duplicate/out-of-order candle at index ${index}, time: ${candle.time}`);
-        return false;
-      }
-      return true;
-    });
-    if (validatedCandles.length !== candles.length) {
-      console.warn(`Filtered out ${candles.length - validatedCandles.length} invalid candles`);
-    }
-  
-    // Set data with proper typing
-    const chartData = validatedCandles.map(c => ({
-      time: c.time as UTCTimestamp,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
-    candleSeries.setData(chartData);
-    
-    const volumeChartData = volumeData.map(v => ({
-      time: v.time as UTCTimestamp,
-      value: v.value,
-      color: v.color,
-    }));
-    volumeSeries.setData(volumeChartData);
-    
-    if (ma50Data.length) maSeries.setData(ma50Data);
-    if (ema20Data.length) emaSeries.setData(ema20Data);
+    // Crosshair interaction for legend
+    chart.subscribeCrosshairMove((param) => {
+      if (!candleSeriesRef.current) return;
 
-    chart.timeScale().fitContent();
+      if (
+        param.point === undefined ||
+        param.point.x < 0 ||
+        param.point.x > chartContainerRef.current!.clientWidth ||
+        param.point.y < 0 ||
+        param.point.y > chartContainerRef.current!.clientHeight
+      ) {
+        if (lastValidDataRef.current) setLegendData(lastValidDataRef.current);
+        return;
+      }
+
+      if (!param.time) {
+        if (lastValidDataRef.current) setLegendData(lastValidDataRef.current);
+        return;
+      }
+
+      const candleData = param.seriesData.get(candleSeries);
+      const volData = param.seriesData.get(volumeSeries);
+      const maData = param.seriesData.get(maSeries);
+      const emaData = param.seriesData.get(emaSeries);
+
+      if (candleData && 'open' in candleData) {
+        setLegendData({
+          open: (candleData.open as number).toFixed(2),
+          high: (candleData.high as number).toFixed(2),
+          low: (candleData.low as number).toFixed(2),
+          close: (candleData.close as number).toFixed(2),
+          volume: volData && 'value' in volData ? (volData.value as number).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "-",
+          ma50: maData && 'value' in maData ? (maData.value as number).toFixed(2) : "-",
+          ema20: emaData && 'value' in emaData ? (emaData.value as number).toFixed(2) : "-",
+          isPriceUp: (candleData.close as number) >= (candleData.open as number)
+        });
+      }
+    });
 
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
@@ -125,31 +149,65 @@ export default function ChartArea() {
 
     return () => {
       window.removeEventListener("resize", handleResize);
-      if (chartRef.current) chartRef.current.remove();
+      if (chartRef.current) {
+        chartRef.current.remove();
+        chartRef.current = null;
+      }
+      hasInitialDataRef.current = false;
     };
-  }, [candles, volumeData, ma50Data, ema20Data, isMounted]);
+  }, [symbol, selectedPreset, isMounted]);
 
-  // Update realtime - FIXED VERSION
+  // UPDATE DATA - WITHOUT resetting viewport
   useEffect(() => {
-    if (!candleSeriesRef.current || !volumeSeriesRef.current || candles.length === 0) return;
-    const lastCandle = candles[candles.length - 1];
+    if (!candleSeriesRef.current || candles.length === 0) return;
+
+    // Validate candles
+    const validatedCandles = candles.filter((candle, index, arr) => {
+      if (index > 0 && candle.time <= arr[index - 1].time) return false;
+      return true;
+    });
+
+    if (validatedCandles.length === 0) return;
+
+    // Set data
+    const chartData = validatedCandles.map(c => ({
+      time: c.time as UTCTimestamp,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+    
+    candleSeriesRef.current.setData(chartData);
+    volumeSeriesRef.current?.setData(volumeData);
+    
+    if (ma50Data.length) maSeriesRef.current?.setData(ma50Data);
+    if (ema20Data.length) emaSeriesRef.current?.setData(ema20Data);
+
+    // ✅ ONLY fit content ONCE when initial data loads
+    if (!hasInitialDataRef.current && chartRef.current) {
+      chartRef.current.timeScale().fitContent();
+      hasInitialDataRef.current = true;
+    }
+
+    // Update legend with latest data
+    const lastCandle = validatedCandles[validatedCandles.length - 1];
     const lastVolume = volumeData[volumeData.length - 1];
     if (lastCandle && lastVolume) {
-      // Fix: Explicitly type the candle data for lightweight-charts
-      candleSeriesRef.current.update({
-        time: lastCandle.time as UTCTimestamp,
-        open: lastCandle.open,
-        high: lastCandle.high,
-        low: lastCandle.low,
-        close: lastCandle.close,
-      });
-      volumeSeriesRef.current.update({
-        time: lastVolume.time as UTCTimestamp,
-        value: lastVolume.value,
-        color: lastVolume.color,
-      });
+      const newLegend = {
+        open: lastCandle.open.toFixed(2),
+        high: lastCandle.high.toFixed(2),
+        low: lastCandle.low.toFixed(2),
+        close: lastCandle.close.toFixed(2),
+        volume: lastVolume.value.toLocaleString("en-US", { maximumFractionDigits: 0 }),
+        ma50: ma50Data.length ? ma50Data[ma50Data.length - 1]?.value.toFixed(2) || "-" : "-",
+        ema20: ema20Data.length ? ema20Data[ema20Data.length - 1]?.value.toFixed(2) || "-" : "-",
+        isPriceUp: lastCandle.close >= lastCandle.open
+      };
+      lastValidDataRef.current = newLegend;
+      setLegendData(newLegend);
     }
-  }, [candles, volumeData]);
+  }, [candles, volumeData, ma50Data, ema20Data]); // ✅ No fitContent here anymore!
 
   if (!isMounted) {
     return <ChartLoading />;
@@ -158,7 +216,7 @@ export default function ChartArea() {
   return (
     <div className="flex flex-1 flex-col h-full bg-[#131722] p-2 relative select-none">
       <div className="flex-1 w-full relative pt-2 h-full" ref={chartContainerRef}>
-        <ChartLegend legend={legend} symbol={symbol} />
+        <ChartLegend legend={legendData || legend} symbol={symbol} />
         {isLoading && <ChartLoadingOverlay preset={selectedPreset} />}
       </div>
       <ChartPresetBar

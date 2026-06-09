@@ -2,9 +2,10 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign, PieChart, XCircle } from "lucide-react";
+import { ChevronDown, ChevronUp, TrendingUp, TrendingDown, DollarSign, PieChart, XCircle, Loader2 } from "lucide-react";
 import { useTradingStore } from "@/stores/useTradingStore";
 import { formatCurrency, pnlColorClass } from "@/utils/format";
+import { useUser } from "@clerk/nextjs";
 
 interface TradingPanelProps {
   isOpen: boolean;
@@ -15,10 +16,17 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
   const balance = useTradingStore((state) => state.balance);
   const positions = useTradingStore((state) => state.positions);
   const resetAccount = useTradingStore((state) => state.resetAccount);
+  const setBalance = useTradingStore((state) => state.setBalance);
+  const setPositions = useTradingStore((state) => state.setPositions);
+  const setTradeHistory = useTradingStore((state) => state.setTradeHistory);
+  const profile = useTradingStore((state) => state.profile);
+  
+  const { isSignedIn, user } = useUser();
   
   const [isMounted, setIsMounted] = useState(false);
   const [selectedPosition, setSelectedPosition] = useState<string | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -63,14 +71,69 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
     positions[0] || { pnl: Infinity, symbol: "" }
   );
 
-  const handleResetAccount = () => {
-    if (showResetConfirm) {
-      resetAccount();
-      setShowResetConfirm(false);
-      alert("Account has been reset to $100,000 virtual cash");
-    } else {
+  const handleResetAccount = async () => {
+    if (!showResetConfirm) {
       setShowResetConfirm(true);
       setTimeout(() => setShowResetConfirm(false), 5000);
+      return;
+    }
+    
+    setIsResetting(true);
+    
+    try {
+      const isGuest = profile.id === "demo-user";
+      
+      if (isGuest) {
+        // Guest mode: just reset local state
+        resetAccount();
+        alert("Account has been reset to $100,000 virtual cash");
+      } else if (isSignedIn && user) {
+        // Authenticated mode: call backend API
+        const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+        
+        const response = await fetch(`${API_BASE}/api/reset-account`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Clerk-User-Id": user.id,
+          },
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+          throw new Error(data.error || "Failed to reset account");
+        }
+        
+        if (data.success) {
+          // Reset local state
+          resetAccount();
+          
+          // Also refresh portfolio data from backend to ensure consistency
+          const { fetchUserPortfolioFromDB } = await import("@/utils/dbSync");
+          const dbData = await fetchUserPortfolioFromDB(user.id);
+          
+          setBalance({
+            cash: dbData.cash,
+            equity: dbData.equity,
+            buyingPower: dbData.cash,
+            dayPnl: 0,
+            dayPnlPercent: 0,
+          });
+          setPositions(dbData.positions);
+          setTradeHistory(dbData.tradeHistory);
+          
+          alert("Account has been reset to $100,000 virtual cash");
+        } else {
+          throw new Error(data.error || "Reset failed");
+        }
+      }
+    } catch (error) {
+      console.error("Reset account error:", error);
+      alert(error instanceof Error ? error.message : "Failed to reset account. Please try again.");
+    } finally {
+      setIsResetting(false);
+      setShowResetConfirm(false);
     }
   };
 
@@ -235,13 +298,22 @@ function StatCard({ title, value, subtitle, icon, valueClassName, progress }: an
   );
 }
 
-function ResetButton({ showResetConfirm, onReset }: any) {
+// Update ResetButton component
+function ResetButton({ showResetConfirm, onReset, isResetting }: any) {
   return (
     <div className="bg-[#1c2030]/50 rounded-lg p-3 border border-[#2a2e39] hover:border-[#ef5350]/30 transition-all">
-      <button onClick={onReset} className="w-full h-full flex flex-col items-center justify-center gap-1 group">
-        <XCircle className={`h-5 w-5 transition-colors ${showResetConfirm ? "text-[#ef5350]" : "text-[#787b86] group-hover:text-[#ef5350]"}`} />
+      <button 
+        onClick={onReset} 
+        disabled={isResetting}
+        className="w-full h-full flex flex-col items-center justify-center gap-1 group disabled:opacity-50"
+      >
+        {isResetting ? (
+          <Loader2 className="h-5 w-5 animate-spin text-[#ef5350]" />
+        ) : (
+          <XCircle className={`h-5 w-5 transition-colors ${showResetConfirm ? "text-[#ef5350]" : "text-[#787b86] group-hover:text-[#ef5350]"}`} />
+        )}
         <span className={`text-[10px] font-semibold uppercase tracking-wider ${showResetConfirm ? "text-[#ef5350]" : "text-[#787b86] group-hover:text-[#ef5350]"}`}>
-          {showResetConfirm ? "Click again to confirm" : "Reset Account"}
+          {isResetting ? "Resetting..." : (showResetConfirm ? "Click again to confirm" : "Reset Account")}
         </span>
       </button>
     </div>
@@ -266,7 +338,7 @@ function PositionRow({ position, isExpanded, onToggle }: any) {
       <div onClick={onToggle} className="grid grid-cols-7 gap-2 px-4 py-3 cursor-pointer">
         <div className="col-span-1">
           <div className="font-bold text-white text-sm">{position.symbol}</div>
-          <div className="text-[9px] text-[#787b86] font-mono">{baseCurrency}/USD</div>
+          <div className="text-[9px] text-[#787b86] font-mono">{baseCurrency}</div>
         </div>
         <div className="col-span-1">
           <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-bold ${

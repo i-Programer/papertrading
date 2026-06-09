@@ -1,4 +1,4 @@
-// src/hooks/useMarketData.ts
+// src/hooks/useMarketData.ts - MODIFIED to reduce subscriptions
 import { useState, useEffect, useCallback } from "react";
 import { marketService, type Product } from "@/services/marketService";
 import { wsManager, type TickerMessage } from "@/lib/websocket-manager";
@@ -28,7 +28,6 @@ export function useMarketData(activeSymbol: string) {
     }
   }, []);
 
-  // Save watchlist
   const addToWatchlist = useCallback((symbol: string) => {
     setWatchlist((prev) => {
       if (prev.includes(symbol)) return prev;
@@ -64,12 +63,17 @@ export function useMarketData(activeSymbol: string) {
     fetchProducts();
   }, []);
 
-  // WebSocket price updates
+  // WebSocket price updates - REDUCED to only watchlist + active symbol
   useEffect(() => {
     if (products.length === 0) return;
 
+    // Only subscribe to watchlist items + active symbol (max 11-15 items)
+    const symbolsToSubscribe = [...new Set([activeSymbol, ...watchlist])].slice(0, 15);
+    
+    console.log(`[MarketData] Subscribing to ${symbolsToSubscribe.length} symbols:`, symbolsToSubscribe);
+
     const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
-      if (data.price && data.product_id) {
+      if (data.price && data.product_id && symbolsToSubscribe.includes(data.product_id)) {
         const price = parseFloat(data.price);
         const changePercent = data.changePercent ? parseFloat(data.changePercent) : undefined;
         const volume = data.volume ? parseFloat(data.volume) : undefined;
@@ -93,15 +97,15 @@ export function useMarketData(activeSymbol: string) {
       }
     });
 
-    // Subscribe to top 50 products
-    const topSymbols = products.slice(0, 50).map((p) => p.id);
+    // Subscribe only to necessary symbols
     if (wsManager && typeof wsManager.subscribeToMarkets === "function") {
-      wsManager.subscribeToMarkets(topSymbols);
+      wsManager.subscribeToMarkets(symbolsToSubscribe);
     }
+    
     wsManager.connect(activeSymbol);
 
     return () => unsubscribe();
-  }, [products.length, activeSymbol]);
+  }, [products.length, activeSymbol, watchlist]);
 
   return {
     products,

@@ -13,34 +13,11 @@ const getClerkUserId = (): string | null => {
   return clerk?.user?.id || null;
 };
 
-
-// ===== ADD THESE TRANSFORM FUNCTIONS =====
-// Helper: Normalize symbol format (BTC-USD -> BTCUSDT)
-const normalizeSymbol = (symbol: string): string => {
-  if (!symbol) return "BTCUSDT";
-  
-  let normalized = symbol.replace(/-/g, '');
-  
-  if (normalized === 'BTCUSD') return 'BTCUSDT';
-  if (normalized === 'ETHUSD') return 'ETHUSDT';
-  if (normalized === 'BNBUSD') return 'BNBUSDT';
-  if (normalized === 'SOLUSD') return 'SOLUSDT';
-  if (normalized === 'XRPUSD') return 'XRPUSDT';
-  if (normalized === 'ADAUSD') return 'ADAUSDT';
-  if (normalized === 'DOGEUSD') return 'DOGEUSDT';
-  if (normalized === 'AVAXUSD') return 'AVAXUSDT';
-  if (normalized === 'DOTUSD') return 'DOTUSDT';
-  if (normalized === 'MATICUSD') return 'MATICUSDT';
-  
-  if (normalized.endsWith('USDT')) return normalized;
-  return `${normalized}USDT`;
-};
-
 // Transform backend position to frontend Position type
 const transformPosition = (backendPosition: any): Position => {
   const entryPrice = parseFloat(backendPosition.entry_price || 0);
   const quantity = parseFloat(backendPosition.quantity || 0);
-  const symbol = normalizeSymbol(backendPosition.symbol || 'BTCUSDT');
+  const symbol = backendPosition.symbol || 'BTCUSDT';
   
   // Use entryPrice as currentPrice initially (will be updated by WebSocket)
   const current = entryPrice;
@@ -61,7 +38,7 @@ const transformPosition = (backendPosition: any): Position => {
 const transformTradeHistory = (backendTrade: any): TradeHistory => {
   return {
     id: backendTrade.id || generateId(),
-    symbol: normalizeSymbol(backendTrade.symbol || 'BTCUSDT'),
+    symbol: backendTrade.symbol || 'BTCUSDT',
     side: backendTrade.side || "BUY",
     quantity: parseFloat(backendTrade.quantity || 0),
     price: parseFloat(backendTrade.price || 0),

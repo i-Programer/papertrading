@@ -1,10 +1,10 @@
 // src/stores/useTradingStore.ts
 import { create } from "zustand";
+import { useCallback, useRef } from "react";
 import type { Position, TradeHistory, UserBalance, UserProfile } from "@/types/trading";
 import { generateId } from "@/utils/id";
 
 interface TradingState {
-  // Global UI state
   symbol: string;
   interval: string;
   profile: UserProfile;
@@ -13,7 +13,6 @@ interface TradingState {
   tradeHistory: TradeHistory[];
   isLoading: boolean;
 
-  // Actions
   setSymbol: (symbol: string) => void;
   setInterval: (interval: string) => void;
   setBalance: (balance: UserBalance) => void;
@@ -55,6 +54,7 @@ export const useTradingStore = create<TradingState>((set, get) => ({
   setTradeHistory: (history) => set({ tradeHistory: history }),
   setLoading: (isLoading) => set({ isLoading }),
 
+  // 🔥 FIX: Only update if actually changed
   syncProfile: (name, email) => {
     const { profile } = get();
     if (profile.name !== name || profile.email !== email) {
@@ -68,26 +68,17 @@ export const useTradingStore = create<TradingState>((set, get) => ({
     }
   },
 
-  // In useTradingStore.ts - ensure this function is correct
   updateLivePrices: (currentPrice) => {
     const { symbol, balance, positions } = get();
-    
-    console.log(`Updating price for ${symbol}: ${currentPrice}`); // Debug log
     
     const updatedPositions = positions.map((pos) => {
       if (pos.symbol === symbol) {
         const pnl = (currentPrice - pos.entryPrice) * pos.quantity;
-        console.log(`Position ${pos.symbol}: entry=${pos.entryPrice}, current=${currentPrice}, qty=${pos.quantity}, pnl=${pnl}`); // Debug
-        return { 
-          ...pos, 
-          currentPrice, 
-          pnl 
-        };
+        return { ...pos, currentPrice, pnl };
       }
       return pos;
     });
     
-    // Calculate total P&L across all positions
     const totalPnL = updatedPositions.reduce((sum, pos) => sum + (pos.pnl || 0), 0);
     const newEquity = balance.cash + totalPnL;
     const dayPnlPercent = balance.cash > 0 ? (totalPnL / balance.cash) * 100 : 0;

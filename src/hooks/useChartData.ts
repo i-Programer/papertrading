@@ -242,21 +242,26 @@ export function useChartData(symbol: string, preset: ChartPreset) {
   );
 
   // Subscribe to WebSocket
-  useEffect(() => {
-    fetchHistory();
+  // In useChartData.ts, update the WebSocket subscription:
 
-    const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
-      if (data.product_id === symbol && data.price) {
-        const price = parseFloat(data.price);
-        const volume = parseFloat(data.last_size || "0");
-        handleRealtimeUpdate(price, volume);
-      }
-    });
+  // useChartData.ts - Hanya subscribe ke symbol yang sedang aktif
+    useEffect(() => {
+        fetchHistory();
 
-    wsManager.connect(symbol);
+        const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
+            // Hanya proses jika symbol match
+            if (data.product_id === symbol && data.price) {
+                const price = parseFloat(data.price);
+                const volume = parseFloat(data.last_size || "0");
+                handleRealtimeUpdate(price, volume);
+            }
+        });
 
-    return () => unsubscribe();
-  }, [symbol, preset, fetchHistory, handleRealtimeUpdate]);
+        // ✅ Hanya subscribe ke CURRENT symbol, bukan semua
+        wsManager.connect(symbol); // Di dalam connect, hanya subscribe ke symbol ini
+        
+        return () => unsubscribe();
+    }, [symbol, preset, fetchHistory, handleRealtimeUpdate]);
 
   return {
     candles,
