@@ -205,14 +205,40 @@ export default function ChartArea() {
     }));
     
     candleSeriesRef.current.setData(chartData);
-    volumeSeriesRef.current?.setData(volumeData);
     
-    if (ma50Data.length) maSeriesRef.current?.setData(ma50Data);
-    if (ema20Data.length) emaSeriesRef.current?.setData(ema20Data);
+    const volumeChartData = volumeData.map(v => ({
+      time: v.time as UTCTimestamp,
+      value: v.value,
+      color: v.color,
+    }));
+    volumeSeriesRef.current?.setData(volumeChartData);
+    
+    const maChartData = ma50Data.map(m => ({
+      time: m.time as UTCTimestamp,
+      value: m.value,
+    }));
+    if (maChartData.length) maSeriesRef.current?.setData(maChartData);
+    
+    const emaChartData = ema20Data.map(e => ({
+      time: e.time as UTCTimestamp,
+      value: e.value,
+    }));
+    if (emaChartData.length) emaSeriesRef.current?.setData(emaChartData);
 
-    // ONLY fit content ONCE when initial data loads
-    if (!hasInitialDataRef.current && chartRef.current) {
-      chartRef.current.timeScale().fitContent();
+    // 🔥 FIXED: Scroll to latest candle instead of fitContent
+    if (!hasInitialDataRef.current && chartRef.current && validatedCandles.length > 0) {
+      const lastCandle = validatedCandles[validatedCandles.length - 1];
+      const firstCandle = validatedCandles[0];
+      const timeRange = lastCandle.time - firstCandle.time;
+      
+      // Show last 20% of the chart (focus on recent data)
+      const visibleRangeStart = lastCandle.time - timeRange * 0.8;
+      
+      chartRef.current.timeScale().setVisibleRange({
+        from: visibleRangeStart as UTCTimestamp,
+        to: lastCandle.time as UTCTimestamp,
+      });
+      
       hasInitialDataRef.current = true;
     }
 
