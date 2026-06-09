@@ -227,6 +227,7 @@ export default function TradingPanel({ isOpen, onToggle }: TradingPanelProps) {
               valueClassName={pnlColorClass(totalPnL)}
             />
             <StatCard
+              icon={<TrendingUp className="h-3 w-3 text-[#2962ff]" />}
               title="Win Rate"
               value={`${winRate.toFixed(1)}%`}
               subtitle={`${positions.length} active position${positions.length !== 1 ? "s" : ""}`}
@@ -359,7 +360,7 @@ function EmptyPositionsState() {
   return (
     <div className="py-12 text-center">
       <div className="text-[#434651] text-sm mb-2">📊 No Active Positions</div>
-      <div className="text-[#787b86] text-xs">Click "BUY" in the order panel to open your first trade</div>
+      <div className="text-[#787b86] text-xs">Click &quot;BUY&quot; in the order panel to open your first trade</div>
     </div>
   );
 }
