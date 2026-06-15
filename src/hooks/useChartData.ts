@@ -118,41 +118,52 @@ export function useChartData(symbol: string, preset: ChartPreset) {
   const [ema20Data, setEma20Data] = useState<EMADataPoint[]>([]);
   const [legend, setLegend] = useState<LegendData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [realtimePrice, setRealtimePrice] = useState<number | null>(null);
 
-  // Realtime candle builder refs
-  const lastCandleTimeRef = useRef<number | null>(null);
-  const lastOpenRef = useRef<number>(0);
-  const lastHighRef = useRef<number>(0);
-  const lastLowRef = useRef<number>(0);
-  const accumulatedVolumeRef = useRef<number>(0);
+  // 🔧 FIX: Gunakan ref untuk menyimpan nilai preset
+  const presetRef = useRef(preset);
+  const symbolRef = useRef(symbol);
+  
+  // 🔧 FIX: Realtime candle builder dengan useRef (bukan state)
+  const realtimeBuilderRef = useRef({
+    lastCandleTime: null as number | null,
+    lastOpen: 0,
+    lastHigh: 0,
+    lastLow: 0,
+    accumulatedVolume: 0,
+  });
 
-  // Fetch historical data
+  // Update refs ketika props berubah
+  useEffect(() => {
+    presetRef.current = preset;
+    symbolRef.current = symbol;
+  }, [preset, symbol]);
+
+  // 🔧 FIX: fetchHistory tanpa dependency ke preset object
   const fetchHistory = useCallback(async () => {
     setIsLoading(true);
     try {
+      const currentPreset = presetRef.current;
       const now = Math.floor(Date.now() / 1000);
-      const startTime = now - preset.rangeSeconds;
+      const startTime = now - currentPreset.rangeSeconds;
+      
       const rawCandles = await marketService.fetchCandles(
-        symbol,
-        preset.interval,
+        symbolRef.current,
+        currentPreset.interval,
         startTime * 1000,
         now * 1000,
         1000
       );
 
-      // Deduplicate and sort
       const uniqueCandles = deduplicateAndSortCandles(rawCandles);
       
       if (uniqueCandles.length === 0) {
-        console.warn("No valid candles received");
         setIsLoading(false);
         return;
       }
 
       setCandles(uniqueCandles);
 
-      // Build volume data
+      // Volume data
       const volumes = uniqueCandles.map((c) => ({
         time: c.time,
         value: c.volume,
@@ -160,135 +171,141 @@ export function useChartData(symbol: string, preset: ChartPreset) {
       }));
       setVolumeData(volumes);
 
-      // Calculate indicators
+      // Indicators
       if (uniqueCandles.length >= 50) {
         const ma50 = calculateMA(uniqueCandles, 50);
         const ema20 = calculateEMA(uniqueCandles, 20);
         setMa50Data(ma50);
         setEma20Data(ema20);
+        
+        // Legend
+        const last = uniqueCandles[uniqueCandles.length - 1];
+        const lastVol = volumes[volumes.length - 1];
+        setLegend({
+          open: last.open.toFixed(2),
+          high: last.high.toFixed(2),
+          low: last.low.toFixed(2),
+          close: last.close.toFixed(2),
+          volume: formatVolumeDisplay(lastVol.value),
+          ma50: ma50[ma50.length - 1]?.value.toFixed(2) || "-",
+          ema20: ema20[ema20.length - 1]?.value.toFixed(2) || "-",
+          isPriceUp: last.close >= last.open,
+        });
       }
-
-      // Set initial legend
-      const last = uniqueCandles[uniqueCandles.length - 1];
-      const lastVol = volumes[volumes.length - 1];
-      setLegend({
-        open: ( last.open as number).toFixed(2),
-        high: ( last.high as number).toFixed(2),
-        low: ( last.low as number).toFixed(2),
-        close: ( last.close as number).toFixed(2),
-        volume: lastVol ? formatVolumeDisplay(lastVol.value) : "-",
-        ma50: ma50Data.length > 0 ? ma50Data[ma50Data.length - 1]?.value.toFixed(2) || "-" : "-",
-        ema20: ema20Data.length > 0 ? ema20Data[ema20Data.length - 1]?.value.toFixed(2) || "-" : "-",
-        isPriceUp: last.close >= last.open,
-      });
       
-      // Reset realtime refs
-      lastCandleTimeRef.current = null;
-      lastOpenRef.current = 0;
-      lastHighRef.current = 0;
-      lastLowRef.current = 0;
-      accumulatedVolumeRef.current = 0;
+      // Reset realtime builder
+      realtimeBuilderRef.current = {
+        lastCandleTime: null,
+        lastOpen: 0,
+        lastHigh: 0,
+        lastLow: 0,
+        accumulatedVolume: 0,
+      };
       
     } catch (err) {
       console.error("Failed to fetch chart data:", err);
     } finally {
       setIsLoading(false);
     }
-  }, [symbol, preset, preset.interval]);
+  }, []); // ✅ Tidak ada dependencies!
 
-  
+  // 🔧 FIX: handleRealtimeUpdate stabil (tidak tergantung preset)
+  const handleRealtimeUpdate = useCallback((price: number, volume: number) => {
+    const currentPreset = presetRef.current;
+    const granularity = currentPreset.granularity;
+    const currentTimeStamp = Math.floor(Date.now() / 1000);
+    const candleTimeStamp = currentTimeStamp - (currentTimeStamp % granularity);
+    const builder = realtimeBuilderRef.current;
 
-  // WebSocket realtime update handler
-  const handleRealtimeUpdate = useCallback(
-    (price: number, volume: number) => {
-      setRealtimePrice(price);
-      const granularity = preset.granularity;
-      const currentTimeStamp = Math.floor(Date.now() / 1000);
-      const candleTimeStamp = currentTimeStamp - (currentTimeStamp % granularity);
-
-      setCandles((prev) => {
-        let newCandles = [...prev];
-        const existingIndex = newCandles.findIndex(c => c.time === candleTimeStamp);
-        
-        if (existingIndex !== -1) {
-          // Update existing candle
-          const existingCandle = newCandles[existingIndex];
-          const updatedCandle = {
-            ...existingCandle,
-            high: Math.max(existingCandle.high, price),
-            low: Math.min(existingCandle.low, price),
-            close: price,
-            volume: existingCandle.volume + volume,
-          };
-          newCandles[existingIndex] = updatedCandle;
-          
-          // Update refs
-          lastOpenRef.current = existingCandle.open;
-          lastHighRef.current = updatedCandle.high;
-          lastLowRef.current = updatedCandle.low;
-          accumulatedVolumeRef.current = updatedCandle.volume;
-        } else if (newCandles.length === 0 || candleTimeStamp > newCandles[newCandles.length - 1].time) {
-          // Create new candle at the end
-          const newCandle: CandleData = {
-            time: candleTimeStamp,
-            open: price,
-            high: price,
-            low: price,
-            close: price,
-            volume: volume,
-          };
-          newCandles.push(newCandle);
-          
-          // Update refs
-          lastCandleTimeRef.current = candleTimeStamp;
-          lastOpenRef.current = price;
-          lastHighRef.current = price;
-          lastLowRef.current = price;
-          accumulatedVolumeRef.current = volume;
-        }
-        
-        // Deduplicate and return
-        return deduplicateAndSortCandles(newCandles);
-      });
-
-      // Update legend
-      setLegend((prevLegend) => {
-        if (!prevLegend) return prevLegend;
-        return {
-          ...prevLegend,
-          open: lastOpenRef.current.toFixed(2),
-          high: lastHighRef.current.toFixed(2),
-          low: lastLowRef.current.toFixed(2),
-          close: price.toFixed(2),
-          volume: formatVolumeDisplay(accumulatedVolumeRef.current),
-          isPriceUp: price >= lastOpenRef.current,
+    setCandles((prev) => {
+      let newCandles = [...prev];
+      const existingIndex = newCandles.findIndex(c => c.time === candleTimeStamp);
+      
+      if (existingIndex !== -1) {
+        // Update existing candle
+        const existingCandle = newCandles[existingIndex];
+        const updatedCandle = {
+          ...existingCandle,
+          high: Math.max(existingCandle.high, price),
+          low: Math.min(existingCandle.low, price),
+          close: price,
+          volume: existingCandle.volume + volume,
         };
-      });
-    },
-    [preset.granularity]
-  );
-
-  // Subscribe to WebSocket
-  // In useChartData.ts, update the WebSocket subscription:
-
-  // useChartData.ts - Hanya subscribe ke symbol yang sedang aktif
-    useEffect(() => {
-        fetchHistory();
-
-        const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
-            // Hanya proses jika symbol match
-            if (data.product_id === symbol && data.price) {
-                const price = parseFloat(data.price);
-                const volume = parseFloat(data.last_size || "0");
-                handleRealtimeUpdate(price, volume);
-            }
-        });
-
-        // ✅ Hanya subscribe ke CURRENT symbol, bukan semua
-        wsManager.connect(symbol); // Di dalam connect, hanya subscribe ke symbol ini
+        newCandles[existingIndex] = updatedCandle;
         
-        return () => unsubscribe();
-    }, [symbol, preset, fetchHistory, handleRealtimeUpdate]);
+        // Update refs
+        builder.lastOpen = existingCandle.open;
+        builder.lastHigh = updatedCandle.high;
+        builder.lastLow = updatedCandle.low;
+        builder.accumulatedVolume = updatedCandle.volume;
+      } else if (newCandles.length === 0 || candleTimeStamp > newCandles[newCandles.length - 1].time) {
+        // Create new candle
+        const newCandle: CandleData = {
+          time: candleTimeStamp,
+          open: price,
+          high: price,
+          low: price,
+          close: price,
+          volume: volume,
+        };
+        newCandles.push(newCandle);
+        
+        builder.lastCandleTime = candleTimeStamp;
+        builder.lastOpen = price;
+        builder.lastHigh = price;
+        builder.lastLow = price;
+        builder.accumulatedVolume = volume;
+      }
+      
+      return deduplicateAndSortCandles(newCandles);
+    });
+
+    // Update legend
+    setLegend((prevLegend) => {
+      if (!prevLegend) return prevLegend;
+      return {
+        ...prevLegend,
+        open: builder.lastOpen.toFixed(2),
+        high: builder.lastHigh.toFixed(2),
+        low: builder.lastLow.toFixed(2),
+        close: price.toFixed(2),
+        volume: formatVolumeDisplay(builder.accumulatedVolume),
+        isPriceUp: price >= builder.lastOpen,
+      };
+    });
+  }, []); // ✅ No dependencies!
+
+  // 🔧 FIX: Effect untuk fetch history - hanya jalan saat symbol atau preset INTERVAL berubah
+  useEffect(() => {
+    fetchHistory();
+  }, [symbol, preset.interval, preset.rangeSeconds, fetchHistory]); // ← explicit primitive values
+
+  // 🔧 FIX: Effect untuk update indicators saat candles berubah
+  useEffect(() => {
+    if (candles.length >= 50) {
+      const newMA = calculateMA(candles, 50);
+      const newEMA = calculateEMA(candles, 20);
+      setMa50Data(newMA);
+      setEma20Data(newEMA);
+    }
+  }, [candles]); // Recalculate indicators when candles update
+
+  // 🔧 FIX: Subscribe WebSocket - stabil karena handler sudah memoized
+  useEffect(() => {
+    const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
+      if (data.product_id === symbol && data.price) {
+        const price = parseFloat(data.price);
+        const volume = parseFloat(data.last_size || "0");
+        handleRealtimeUpdate(price, volume);
+      }
+    });
+
+    wsManager.connect(symbol);
+    
+    return () => {
+      unsubscribe();
+    };
+  }, [symbol, handleRealtimeUpdate]); // ← dependency minimal
 
   return {
     candles,
@@ -296,7 +313,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     ma50Data,
     ema20Data,
     legend,
-    realtimePrice,
     isLoading,
     preset,
   };

@@ -11,6 +11,7 @@ import SidebarRight from "@/components/SidebarRight";
 import TradingPanel from "@/components/TradingPanel";
 import OrderPanel from "@/components/OrderPanel";
 import { Loader2 } from "lucide-react";
+import AIPanel from "@/components/AIPanel";
 
 export default function Home() {
   const [isPanelOpen, setIsPanelOpen] = useState(true);
@@ -137,6 +138,7 @@ export default function Home() {
         <OrderPanel />
         <SidebarRight />
       </div>
+      <AIPanel/>
     </div>
   );
 }
