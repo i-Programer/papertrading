@@ -1,4 +1,4 @@
-// src/hooks/useChartData.ts (COMPLETE UPDATED VERSION)
+// src/hooks/useChartData.ts (FIXED VERSION)
 import { useState, useEffect, useRef, useCallback } from "react";
 import { marketService, type CandleData } from "@/services/marketService";
 import { wsManager, type TickerMessage } from "@/lib/websocket-manager";
@@ -51,17 +51,6 @@ export const CHART_PRESETS: ChartPreset[] = [
   { label: "2Y (2d)", rangeSeconds: 730 * 24 * 3600, granularity: 172800, interval: "2d", description: "2 years - 2 day candles" },
   { label: "5Y (1w)", rangeSeconds: 5 * 365 * 24 * 3600, granularity: 604800, interval: "1w", description: "5 years - 1 week candles" },
 ];
-
-export interface LegendData {
-  open: string;
-  high: string;
-  low: string;
-  close: string;
-  volume: string;
-  ma50: string;
-  ema20: string;
-  isPriceUp: boolean;
-}
 
 // Helper: Deduplicate and sort candles
 const deduplicateAndSortCandles = (candles: CandleData[]): CandleData[] => {
@@ -119,11 +108,13 @@ export function useChartData(symbol: string, preset: ChartPreset) {
   const [legend, setLegend] = useState<LegendData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🔧 FIX: Gunakan ref untuk menyimpan nilai preset
+  // 🔥 FIX: Use refs to prevent infinite loops
   const presetRef = useRef(preset);
   const symbolRef = useRef(symbol);
+  const isUpdatingRef = useRef(false);
+  const lastUpdateTimeRef = useRef(0);
   
-  // 🔧 FIX: Realtime candle builder dengan useRef (bukan state)
+  // 🔥 FIX: Realtime candle builder dengan useRef
   const realtimeBuilderRef = useRef({
     lastCandleTime: null as number | null,
     lastOpen: 0,
@@ -138,7 +129,7 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     symbolRef.current = symbol;
   }, [preset, symbol]);
 
-  // 🔧 FIX: fetchHistory tanpa dependency ke preset object
+  // 🔥 FIX: Memoized fetchHistory
   const fetchHistory = useCallback(async () => {
     setIsLoading(true);
     try {
@@ -207,96 +198,117 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     } finally {
       setIsLoading(false);
     }
-  }, []); // ✅ Tidak ada dependencies!
+  }, []);
 
-  // 🔧 FIX: handleRealtimeUpdate stabil (tidak tergantung preset)
+  // 🔥 FIX: Stabilized handleRealtimeUpdate with throttling
   const handleRealtimeUpdate = useCallback((price: number, volume: number) => {
-    const currentPreset = presetRef.current;
-    const granularity = currentPreset.granularity;
-    const currentTimeStamp = Math.floor(Date.now() / 1000);
-    const candleTimeStamp = currentTimeStamp - (currentTimeStamp % granularity);
-    const builder = realtimeBuilderRef.current;
+    // Throttle updates to max 30 per second
+    const now = Date.now();
+    if (now - lastUpdateTimeRef.current < 33) {
+      return; // Skip if last update was less than 33ms ago
+    }
+    lastUpdateTimeRef.current = now;
+    
+    // Prevent concurrent updates
+    if (isUpdatingRef.current) return;
+    isUpdatingRef.current = true;
+    
+    try {
+      const currentPreset = presetRef.current;
+      const granularity = currentPreset.granularity;
+      const currentTimeStamp = Math.floor(Date.now() / 1000);
+      const candleTimeStamp = currentTimeStamp - (currentTimeStamp % granularity);
+      const builder = realtimeBuilderRef.current;
 
-    setCandles((prev) => {
-      let newCandles = [...prev];
-      const existingIndex = newCandles.findIndex(c => c.time === candleTimeStamp);
-      
-      if (existingIndex !== -1) {
-        // Update existing candle
-        const existingCandle = newCandles[existingIndex];
-        const updatedCandle = {
-          ...existingCandle,
-          high: Math.max(existingCandle.high, price),
-          low: Math.min(existingCandle.low, price),
-          close: price,
-          volume: existingCandle.volume + volume,
-        };
-        newCandles[existingIndex] = updatedCandle;
+      setCandles((prev) => {
+        let newCandles = [...prev];
+        const existingIndex = newCandles.findIndex(c => c.time === candleTimeStamp);
         
-        // Update refs
-        builder.lastOpen = existingCandle.open;
-        builder.lastHigh = updatedCandle.high;
-        builder.lastLow = updatedCandle.low;
-        builder.accumulatedVolume = updatedCandle.volume;
-      } else if (newCandles.length === 0 || candleTimeStamp > newCandles[newCandles.length - 1].time) {
-        // Create new candle
-        const newCandle: CandleData = {
-          time: candleTimeStamp,
-          open: price,
-          high: price,
-          low: price,
-          close: price,
-          volume: volume,
-        };
-        newCandles.push(newCandle);
+        if (existingIndex !== -1) {
+          // Update existing candle
+          const existingCandle = newCandles[existingIndex];
+          const updatedCandle = {
+            ...existingCandle,
+            high: Math.max(existingCandle.high, price),
+            low: Math.min(existingCandle.low, price),
+            close: price,
+            volume: existingCandle.volume + volume,
+          };
+          newCandles[existingIndex] = updatedCandle;
+          
+          // Update refs
+          builder.lastOpen = existingCandle.open;
+          builder.lastHigh = updatedCandle.high;
+          builder.lastLow = updatedCandle.low;
+          builder.accumulatedVolume = updatedCandle.volume;
+        } else if (newCandles.length === 0 || candleTimeStamp > newCandles[newCandles.length - 1].time) {
+          // Create new candle
+          const newCandle: CandleData = {
+            time: candleTimeStamp,
+            open: price,
+            high: price,
+            low: price,
+            close: price,
+            volume: volume,
+          };
+          newCandles.push(newCandle);
+          
+          builder.lastCandleTime = candleTimeStamp;
+          builder.lastOpen = price;
+          builder.lastHigh = price;
+          builder.lastLow = price;
+          builder.accumulatedVolume = volume;
+        }
         
-        builder.lastCandleTime = candleTimeStamp;
-        builder.lastOpen = price;
-        builder.lastHigh = price;
-        builder.lastLow = price;
-        builder.accumulatedVolume = volume;
-      }
-      
-      return deduplicateAndSortCandles(newCandles);
-    });
+        return deduplicateAndSortCandles(newCandles);
+      });
 
-    // Update legend
-    setLegend((prevLegend) => {
-      if (!prevLegend) return prevLegend;
-      return {
-        ...prevLegend,
-        open: builder.lastOpen.toFixed(2),
-        high: builder.lastHigh.toFixed(2),
-        low: builder.lastLow.toFixed(2),
-        close: price.toFixed(2),
-        volume: formatVolumeDisplay(builder.accumulatedVolume),
-        isPriceUp: price >= builder.lastOpen,
-      };
-    });
-  }, []); // ✅ No dependencies!
+      // Update legend separately to avoid re-triggering
+      setLegend((prevLegend) => {
+        if (!prevLegend) return prevLegend;
+        return {
+          ...prevLegend,
+          open: builder.lastOpen.toFixed(2),
+          high: builder.lastHigh.toFixed(2),
+          low: builder.lastLow.toFixed(2),
+          close: price.toFixed(2),
+          volume: formatVolumeDisplay(builder.accumulatedVolume),
+          isPriceUp: price >= builder.lastOpen,
+        };
+      });
+    } finally {
+      isUpdatingRef.current = false;
+    }
+  }, []);
 
-  // 🔧 FIX: Effect untuk fetch history - hanya jalan saat symbol atau preset INTERVAL berubah
+  // 🔥 FIX: Effect untuk fetch history
   useEffect(() => {
     fetchHistory();
-  }, [symbol, preset.interval, preset.rangeSeconds, fetchHistory]); // ← explicit primitive values
+  }, [symbol, preset.interval, preset.rangeSeconds, fetchHistory]);
 
-  // 🔧 FIX: Effect untuk update indicators saat candles berubah
+  // 🔥 FIX: Effect untuk update indicators - use requestAnimationFrame for batching
   useEffect(() => {
     if (candles.length >= 50) {
-      const newMA = calculateMA(candles, 50);
-      const newEMA = calculateEMA(candles, 20);
-      setMa50Data(newMA);
-      setEma20Data(newEMA);
+      // Use requestAnimationFrame to batch updates and prevent loops
+      const frameId = requestAnimationFrame(() => {
+        const newMA = calculateMA(candles, 50);
+        const newEMA = calculateEMA(candles, 20);
+        setMa50Data(newMA);
+        setEma20Data(newEMA);
+      });
+      return () => cancelAnimationFrame(frameId);
     }
-  }, [candles]); // Recalculate indicators when candles update
+  }, [candles]);
 
-  // 🔧 FIX: Subscribe WebSocket - stabil karena handler sudah memoized
+  // 🔥 FIX: Subscribe WebSocket - cleaned up
   useEffect(() => {
     const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
       if (data.product_id === symbol && data.price) {
         const price = parseFloat(data.price);
         const volume = parseFloat(data.last_size || "0");
-        handleRealtimeUpdate(price, volume);
+        if (!isNaN(price) && price > 0) {
+          handleRealtimeUpdate(price, volume);
+        }
       }
     });
 
@@ -305,7 +317,7 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     return () => {
       unsubscribe();
     };
-  }, [symbol, handleRealtimeUpdate]); // ← dependency minimal
+  }, [symbol, handleRealtimeUpdate]);
 
   return {
     candles,
