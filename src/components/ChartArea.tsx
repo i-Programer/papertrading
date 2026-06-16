@@ -226,23 +226,6 @@ export default function ChartArea() {
     if (emaChartData.length) emaSeriesRef.current?.setData(emaChartData);
 
     // 🔥 FIXED: Scroll to latest candle instead of fitContent
-    if (!hasInitialDataRef.current && chartRef.current && validatedCandles.length > 0) {
-      const lastCandle = validatedCandles[validatedCandles.length - 1];
-      const firstCandle = validatedCandles[0];
-      const timeRange = lastCandle.time - firstCandle.time;
-      
-      // Show last 20% of the chart (focus on recent data)
-      const visibleRangeStart = lastCandle.time - timeRange * 0.8;
-      
-      chartRef.current.timeScale().setVisibleRange({
-        from: visibleRangeStart as UTCTimestamp,
-        to: lastCandle.time as UTCTimestamp,
-      });
-      
-      hasInitialDataRef.current = true;
-    }
-
-    // Update legend with latest data
     const lastCandle = validatedCandles[validatedCandles.length - 1];
     const lastVolume = volumeData[volumeData.length - 1];
     if (lastCandle && lastVolume) {
@@ -256,8 +239,20 @@ export default function ChartArea() {
         ema20: ema20Data.length ? ema20Data[ema20Data.length - 1]?.value.toFixed(2) || "-" : "-",
         isPriceUp: lastCandle.close >= lastCandle.open
       };
-      lastValidDataRef.current = newLegend;
-      setLegendData(newLegend);
+      
+      // ✅ Cek apakah data benar-benar berubah
+      const currentLegend = lastValidDataRef.current;
+      if (!currentLegend || 
+          currentLegend.open !== newLegend.open ||
+          currentLegend.high !== newLegend.high ||
+          currentLegend.low !== newLegend.low ||
+          currentLegend.close !== newLegend.close ||
+          currentLegend.volume !== newLegend.volume ||
+          currentLegend.ma50 !== newLegend.ma50 ||
+          currentLegend.ema20 !== newLegend.ema20) {
+        lastValidDataRef.current = newLegend;
+        setLegendData(newLegend);
+      }
     }
   }, [candles, volumeData, ma50Data, ema20Data]);
 

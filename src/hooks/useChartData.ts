@@ -129,76 +129,80 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     symbolRef.current = symbol;
   }, [preset, symbol]);
 
-  // 🔥 FIX: Memoized fetchHistory
-  const fetchHistory = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const currentPreset = presetRef.current;
-      const now = Math.floor(Date.now() / 1000);
-      const startTime = now - currentPreset.rangeSeconds;
-      
-      const rawCandles = await marketService.fetchCandles(
-        symbolRef.current,
-        currentPreset.interval,
-        startTime * 1000,
-        now * 1000,
-        1000
-      );
-
-      const uniqueCandles = deduplicateAndSortCandles(rawCandles);
-      
-      if (uniqueCandles.length === 0) {
-        setIsLoading(false);
-        return;
-      }
-
-      setCandles(uniqueCandles);
-
-      // Volume data
-      const volumes = uniqueCandles.map((c) => ({
-        time: c.time,
-        value: c.volume,
-        color: c.close >= c.open ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)",
-      }));
-      setVolumeData(volumes);
-
-      // Indicators
-      if (uniqueCandles.length >= 50) {
-        const ma50 = calculateMA(uniqueCandles, 50);
-        const ema20 = calculateEMA(uniqueCandles, 20);
-        setMa50Data(ma50);
-        setEma20Data(ema20);
+  // 🔥 FIX: Effect untuk fetch history
+  useEffect(() => {
+    const fetchHistory = async () => {
+      setIsLoading(true);
+      try {
+        const currentPreset = presetRef.current;
+        const now = Math.floor(Date.now() / 1000);
+        const startTime = now - currentPreset.rangeSeconds;
         
-        // Legend
-        const last = uniqueCandles[uniqueCandles.length - 1];
-        const lastVol = volumes[volumes.length - 1];
-        setLegend({
-          open: last.open.toFixed(2),
-          high: last.high.toFixed(2),
-          low: last.low.toFixed(2),
-          close: last.close.toFixed(2),
-          volume: formatVolumeDisplay(lastVol.value),
-          ma50: ma50[ma50.length - 1]?.value.toFixed(2) || "-",
-          ema20: ema20[ema20.length - 1]?.value.toFixed(2) || "-",
-          isPriceUp: last.close >= last.open,
-        });
+        const rawCandles = await marketService.fetchCandles(
+          symbolRef.current,
+          currentPreset.interval,
+          startTime * 1000,
+          now * 1000,
+          1000
+        );
+
+        const uniqueCandles = deduplicateAndSortCandles(rawCandles);
+        
+        if (uniqueCandles.length === 0) {
+          setIsLoading(false);
+          return;
+        }
+
+        setCandles(uniqueCandles);
+
+        // Volume data
+        const volumes = uniqueCandles.map((c) => ({
+          time: c.time,
+          value: c.volume,
+          color: c.close >= c.open ? "rgba(38, 166, 154, 0.4)" : "rgba(239, 83, 80, 0.4)",
+        }));
+        setVolumeData(volumes);
+
+        // Indicators
+        if (uniqueCandles.length >= 50) {
+          const ma50 = calculateMA(uniqueCandles, 50);
+          const ema20 = calculateEMA(uniqueCandles, 20);
+          setMa50Data(ma50);
+          setEma20Data(ema20);
+          
+          // Legend
+          const last = uniqueCandles[uniqueCandles.length - 1];
+          const lastVol = volumes[volumes.length - 1];
+          setLegend({
+            open: last.open.toFixed(2),
+            high: last.high.toFixed(2),
+            low: last.low.toFixed(2),
+            close: last.close.toFixed(2),
+            volume: formatVolumeDisplay(lastVol.value),
+            ma50: ma50[ma50.length - 1]?.value.toFixed(2) || "-",
+            ema20: ema20[ema20.length - 1]?.value.toFixed(2) || "-",
+            isPriceUp: last.close >= last.open,
+          });
+        }
+        
+        // Reset realtime builder
+        realtimeBuilderRef.current = {
+          lastCandleTime: null,
+          lastOpen: 0,
+          lastHigh: 0,
+          lastLow: 0,
+          accumulatedVolume: 0,
+        };
+        
+      } catch (err) {
+        console.error("Failed to fetch chart data:", err);
+      } finally {
+        setIsLoading(false);
       }
-      
-      // Reset realtime builder
-      realtimeBuilderRef.current = {
-        lastCandleTime: null,
-        lastOpen: 0,
-        lastHigh: 0,
-        lastLow: 0,
-        accumulatedVolume: 0,
-      };
-      
-    } catch (err) {
-      console.error("Failed to fetch chart data:", err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
+    };
+
+    fetchHistory();
+  }, [symbol, preset.interval, preset.rangeSeconds]); // Remove fetchHistory from deps
 
   // 🔥 FIX: Stabilized handleRealtimeUpdate with throttling
   const handleRealtimeUpdate = useCallback((price: number, volume: number) => {
@@ -221,7 +225,7 @@ export function useChartData(symbol: string, preset: ChartPreset) {
       const builder = realtimeBuilderRef.current;
 
       setCandles((prev) => {
-        let newCandles = [...prev];
+        const newCandles = [...prev];
         const existingIndex = newCandles.findIndex(c => c.time === candleTimeStamp);
         
         if (existingIndex !== -1) {
@@ -280,11 +284,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
       isUpdatingRef.current = false;
     }
   }, []);
-
-  // 🔥 FIX: Effect untuk fetch history
-  useEffect(() => {
-    fetchHistory();
-  }, [symbol, preset.interval, preset.rangeSeconds, fetchHistory]);
 
   // 🔥 FIX: Effect untuk update indicators - use requestAnimationFrame for batching
   useEffect(() => {
