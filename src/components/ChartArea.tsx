@@ -210,7 +210,7 @@ export default function ChartArea() {
         chartRef.current = null;
         isChartReadyRef.current = false;
       }
-      hasInitialDataRef.current = false;
+      hasInitialDataRef.current = true;
     };
   }, [symbol, selectedPreset, isMounted]);
 
@@ -287,13 +287,14 @@ export default function ChartArea() {
     }
     
     // 🔥 FIX: Only scroll to latest on initial load or when new data arrives
-    if (chartRef.current) {
-      // Use requestAnimationFrame to prevent layout thrashing
+    if (!hasInitialDataRef.current && chartRef.current && validatedCandles.length > 0) {
       requestAnimationFrame(() => {
         if (chartRef.current) {
           chartRef.current.timeScale().fitContent();
         }
       });
+      // Flip the ref to true so this block never forces a snap-back again
+      hasInitialDataRef.current = true; 
     }
   }, [candles, volumeData, ma50Data, ema20Data]);
 
