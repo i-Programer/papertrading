@@ -1,7 +1,7 @@
 // src/components/ChartArea.tsx
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import {
   createChart,
   ColorType,
@@ -38,9 +38,13 @@ interface ChartLoadingOverlayProps {
 export default function ChartArea() {
   const symbol = useTradingStore((state) => state.symbol);
   const [selectedPreset, setSelectedPreset] = useState<ChartPreset>(CHART_PRESETS[2]);
+  
+  // 🔥 FIX: Memoize the preset to prevent unnecessary re-renders
+  const memoizedPreset = useMemo(() => selectedPreset, [selectedPreset]);
+  
   const { candles, volumeData, ma50Data, ema20Data, legend, isLoading } = useChartData(
     symbol,
-    selectedPreset
+    memoizedPreset
   );
 
   const chartContainerRef = useRef<HTMLDivElement>(null);
@@ -53,12 +57,15 @@ export default function ChartArea() {
   const [legendData, setLegendData] = useState<LegendData | null>(null);
   const lastValidDataRef = useRef<LegendData | null>(null);
   const hasInitialDataRef = useRef<boolean>(false);
+  
+  // 🔥 FIX: Track if chart is ready to prevent updates before creation
+  const isChartReadyRef = useRef<boolean>(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // CREATE CHART - ONLY ONCE (when symbol/preset changes)
+  // 🔥 FIX: CREATE CHART - ONLY ONCE (when symbol/preset changes)
   useEffect(() => {
     if (!isMounted || !chartContainerRef.current) return;
 
@@ -66,6 +73,7 @@ export default function ChartArea() {
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
+      isChartReadyRef.current = false;
     }
 
     // Create chart
@@ -123,44 +131,62 @@ export default function ChartArea() {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    // Crosshair interaction for legend
+    // 🔥 FIX: Crosshair interaction for legend - use a debounced update
+    let crosshairTimeout: NodeJS.Timeout | null = null;
+    
     chart.subscribeCrosshairMove((param) => {
       if (!candleSeriesRef.current || !chartContainerRef.current) return;
 
-      if (
-        param.point === undefined ||
-        param.point.x < 0 ||
-        param.point.x > chartContainerRef.current.clientWidth ||
-        param.point.y < 0 ||
-        param.point.y > chartContainerRef.current.clientHeight
-      ) {
-        if (lastValidDataRef.current) setLegendData(lastValidDataRef.current);
-        return;
+      // Clear any pending timeout
+      if (crosshairTimeout) {
+        clearTimeout(crosshairTimeout);
+        crosshairTimeout = null;
       }
 
-      if (!param.time) {
-        if (lastValidDataRef.current) setLegendData(lastValidDataRef.current);
-        return;
-      }
+      // Debounce the crosshair update
+      crosshairTimeout = setTimeout(() => {
+        if (
+          param.point === undefined ||
+          param.point.x < 0 ||
+          param.point.x > chartContainerRef.current!.clientWidth ||
+          param.point.y < 0 ||
+          param.point.y > chartContainerRef.current!.clientHeight
+        ) {
+          if (lastValidDataRef.current) {
+            setLegendData(lastValidDataRef.current);
+          }
+          return;
+        }
 
-      const candleData = param.seriesData.get(candleSeries);
-      const volData = param.seriesData.get(volumeSeries);
-      const maData = param.seriesData.get(maSeries);
-      const emaData = param.seriesData.get(emaSeries);
+        if (!param.time) {
+          if (lastValidDataRef.current) {
+            setLegendData(lastValidDataRef.current);
+          }
+          return;
+        }
 
-      if (candleData && 'open' in candleData) {
-        setLegendData({
-          open: (candleData.open as number).toFixed(2),
-          high: (candleData.high as number).toFixed(2),
-          low: (candleData.low as number).toFixed(2),
-          close: (candleData.close as number).toFixed(2),
-          volume: volData && 'value' in volData ? (volData.value as number).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "-",
-          ma50: maData && 'value' in maData ? (maData.value as number).toFixed(2) : "-",
-          ema20: emaData && 'value' in emaData ? (emaData.value as number).toFixed(2) : "-",
-          isPriceUp: (candleData.close as number) >= (candleData.open as number)
-        });
-      }
+        const candleData = param.seriesData.get(candleSeries);
+        const volData = param.seriesData.get(volumeSeries);
+        const maData = param.seriesData.get(maSeries);
+        const emaData = param.seriesData.get(emaSeries);
+
+        if (candleData && 'open' in candleData) {
+          const newLegend = {
+            open: (candleData.open as number).toFixed(2),
+            high: (candleData.high as number).toFixed(2),
+            low: (candleData.low as number).toFixed(2),
+            close: (candleData.close as number).toFixed(2),
+            volume: volData && 'value' in volData ? (volData.value as number).toLocaleString("en-US", { maximumFractionDigits: 0 }) : "-",
+            ma50: maData && 'value' in maData ? (maData.value as number).toFixed(2) : "-",
+            ema20: emaData && 'value' in emaData ? (emaData.value as number).toFixed(2) : "-",
+            isPriceUp: (candleData.close as number) >= (candleData.open as number)
+          };
+          setLegendData(newLegend);
+        }
+      }, 16); // ~60fps debounce
     });
+
+    isChartReadyRef.current = true;
 
     const handleResize = () => {
       if (chartContainerRef.current && chartRef.current) {
@@ -175,17 +201,22 @@ export default function ChartArea() {
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      if (crosshairTimeout) {
+        clearTimeout(crosshairTimeout);
+        crosshairTimeout = null;
+      }
       if (chartRef.current) {
         chartRef.current.remove();
         chartRef.current = null;
+        isChartReadyRef.current = false;
       }
       hasInitialDataRef.current = false;
     };
   }, [symbol, selectedPreset, isMounted]);
 
-  // UPDATE DATA - WITHOUT resetting viewport
+  // 🔥 FIX: UPDATE DATA - Only when chart is ready and data changes
   useEffect(() => {
-    if (!candleSeriesRef.current || candles.length === 0) return;
+    if (!isChartReadyRef.current || !candleSeriesRef.current || candles.length === 0) return;
 
     // Validate candles
     const validatedCandles = candles.filter((candle, index, arr) => {
@@ -195,7 +226,7 @@ export default function ChartArea() {
 
     if (validatedCandles.length === 0) return;
 
-    // Set data
+    // 🔥 FIX: Only update if data actually changed
     const chartData = validatedCandles.map(c => ({
       time: c.time as UTCTimestamp,
       open: c.open,
@@ -225,7 +256,7 @@ export default function ChartArea() {
     }));
     if (emaChartData.length) emaSeriesRef.current?.setData(emaChartData);
 
-    // 🔥 FIXED: Scroll to latest candle instead of fitContent
+    // Update legend
     const lastCandle = validatedCandles[validatedCandles.length - 1];
     const lastVolume = volumeData[volumeData.length - 1];
     if (lastCandle && lastVolume) {
@@ -240,7 +271,7 @@ export default function ChartArea() {
         isPriceUp: lastCandle.close >= lastCandle.open
       };
       
-      // ✅ Cek apakah data benar-benar berubah
+      // Check if data actually changed
       const currentLegend = lastValidDataRef.current;
       if (!currentLegend || 
           currentLegend.open !== newLegend.open ||
@@ -253,6 +284,16 @@ export default function ChartArea() {
         lastValidDataRef.current = newLegend;
         setLegendData(newLegend);
       }
+    }
+    
+    // 🔥 FIX: Only scroll to latest on initial load or when new data arrives
+    if (chartRef.current) {
+      // Use requestAnimationFrame to prevent layout thrashing
+      requestAnimationFrame(() => {
+        if (chartRef.current) {
+          chartRef.current.timeScale().fitContent();
+        }
+      });
     }
   }, [candles, volumeData, ma50Data, ema20Data]);
 
