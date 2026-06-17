@@ -30,25 +30,24 @@ export default function RegisterPage() {
               path="/register"
               appearance={{
                 variables: {
-                  // New properties (non-deprecated)
-                  colorPrimary: "#3b82f6",        // Blue color for buttons
-                  colorPrimaryForeground: "#ffffff", // Button text color
+                  colorPrimary: "#3b82f6",        
+                  colorPrimaryForeground: "#ffffff", 
                   
-                  colorBackground: "#1e293b",     // Card background (slate-800)
-                  colorForeground: "#f1f5f9",     // Primary text color (white)
-                  colorMutedForeground: "#94a3b8", // Secondary text color (light gray)
+                  colorBackground: "#1e293b",     
+                  colorForeground: "#f1f5f9",     
+                  colorMutedForeground: "#94a3b8", 
                   
-                  colorInput: "#0f172a",          // Input background (slate-900)
-                  colorInputForeground: "#f1f5f9", // Input text color (white)
+                  colorInput: "#0f172a",          
+                  colorInputForeground: "#f1f5f9", 
                   
-                  colorBorder: "#334155",         // Border color (slate-700)
-                  colorDanger: "#ef4444",         // Error message color
-                  colorSuccess: "#10b981",        // Success message color
-                  borderRadius: "0.5rem",         // Border radius
+                  colorBorder: "#334155",         
+                  colorDanger: "#ef4444",         
+                  colorSuccess: "#10b981",        
+                  borderRadius: "0.5rem",         
                 },
                 elements: {
-                  card: "shadow-none",             // Remove default shadow
-                  header: "hidden",                // Hide default header
+                  card: "shadow-none",             
+                  header: "hidden",                
                   formButtonPrimary: "bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 px-4 rounded-xl transition-all duration-200 transform hover:scale-[1.02]",
                   formFieldInput: "bg-slate-900 border border-slate-700 text-white placeholder:text-slate-500 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200",
                   formFieldLabel: "text-slate-300 font-medium mb-2",

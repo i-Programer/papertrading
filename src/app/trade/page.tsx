@@ -25,22 +25,18 @@ export default function Home() {
   const setPositions = useTradingStore((state) => state.setPositions);
   const setTradeHistory = useTradingStore((state) => state.setTradeHistory);
   
-  // 🔥 ADD REFS to track sync state
   const hasSyncedRef = useRef(false);
   const lastUserIdRef = useRef<string | null>(null);
   const lastSyncTimeRef = useRef<number>(0);
 
-  // 🔥 CREATE STABLE CALLBACKS
   const handleSync = useCallback(async () => {
     const now = Date.now();
     
-    // Prevent sync if already synced in last 5 seconds
     if (now - lastSyncTimeRef.current < 5000) {
       console.log("Sync skipped - too frequent");
       return;
     }
     
-    // Prevent duplicate sync for same user
     if (isSignedIn && user && lastUserIdRef.current === user.id && hasSyncedRef.current) {
       console.log("Sync skipped - already synced for this user");
       setIsSyncing(false);
@@ -57,13 +53,10 @@ export default function Home() {
         console.log("Syncing user:", user.id);
         lastUserIdRef.current = user.id;
         
-        // 1. Sync profile to Supabase
         await syncUserProfileToDB(user.id, fullName, emailAddress);
         
-        // 2. Fetch portfolio from DB
         const dbData = await fetchUserPortfolioFromDB(user.id);
         
-        // 3. Update Zustand store
         syncProfile(fullName, emailAddress);
         setBalance({
           cash: dbData.cash,
@@ -79,7 +72,6 @@ export default function Home() {
         lastSyncTimeRef.current = now;
         
       } else if (!isSignedIn) {
-        // Guest mode
         if (!hasSyncedRef.current || lastUserIdRef.current === null) {
           console.log("Setting up guest account");
           resetAccount();
@@ -95,11 +87,9 @@ export default function Home() {
     }
   }, [isSignedIn, user, syncProfile, resetAccount, setBalance, setPositions, setTradeHistory]);
 
-  // 🔥 FIXED useEffect - only run on mount and when user changes significantly
   useEffect(() => {
     if (!isLoaded) return;
     
-    // Only sync if user ID actually changed or not synced yet
     const currentUserId = isSignedIn ? user?.id : "guest";
     
     if (currentUserId !== lastUserIdRef.current || !hasSyncedRef.current) {
@@ -109,7 +99,7 @@ export default function Home() {
       console.log("Same user, skipping sync");
       setIsSyncing(false);
     }
-  }, [isLoaded, isSignedIn, user?.id, handleSync]); // ← Only depend on user?.id, not full user object
+  }, [isLoaded, isSignedIn, user?.id, handleSync]); 
 
   if (isSyncing) {
     return (

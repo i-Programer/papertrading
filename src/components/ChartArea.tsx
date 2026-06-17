@@ -58,25 +58,21 @@ export default function ChartArea() {
   const lastValidDataRef = useRef<LegendData | null>(null);
   const hasInitialDataRef = useRef<boolean>(false);
   
-  // 🔥 FIX: Track if chart is ready to prevent updates before creation
   const isChartReadyRef = useRef<boolean>(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
 
-  // 🔥 FIX: CREATE CHART - ONLY ONCE (when symbol/preset changes)
   useEffect(() => {
     if (!isMounted || !chartContainerRef.current) return;
 
-    // Clean up previous chart
     if (chartRef.current) {
       chartRef.current.remove();
       chartRef.current = null;
       isChartReadyRef.current = false;
     }
 
-    // Create chart
     const chart = createChart(chartContainerRef.current, {
       layout: { background: { type: ColorType.Solid, color: "#131722" }, textColor: "#d1d4dc" },
       grid: { vertLines: { color: "#2a2e39" }, horzLines: { color: "#2a2e39" } },
@@ -95,7 +91,6 @@ export default function ChartArea() {
     });
     chartRef.current = chart;
 
-    // Add series
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: "#26a69a",
       downColor: "#ef5350",
@@ -131,19 +126,16 @@ export default function ChartArea() {
       scaleMargins: { top: 0.8, bottom: 0 },
     });
 
-    // 🔥 FIX: Crosshair interaction for legend - use a debounced update
     let crosshairTimeout: NodeJS.Timeout | null = null;
     
     chart.subscribeCrosshairMove((param) => {
       if (!candleSeriesRef.current || !chartContainerRef.current) return;
 
-      // Clear any pending timeout
       if (crosshairTimeout) {
         clearTimeout(crosshairTimeout);
         crosshairTimeout = null;
       }
 
-      // Debounce the crosshair update
       crosshairTimeout = setTimeout(() => {
         if (
           param.point === undefined ||
@@ -183,7 +175,7 @@ export default function ChartArea() {
           };
           setLegendData(newLegend);
         }
-      }, 16); // ~60fps debounce
+      }, 16); 
     });
 
     isChartReadyRef.current = true;
@@ -214,11 +206,9 @@ export default function ChartArea() {
     };
   }, [symbol, selectedPreset, isMounted]);
 
-  // 🔥 FIX: UPDATE DATA - Only when chart is ready and data changes
   useEffect(() => {
     if (!isChartReadyRef.current || !candleSeriesRef.current || candles.length === 0) return;
 
-    // Validate candles
     const validatedCandles = candles.filter((candle, index, arr) => {
       if (index > 0 && candle.time <= arr[index - 1].time) return false;
       return true;
@@ -226,7 +216,6 @@ export default function ChartArea() {
 
     if (validatedCandles.length === 0) return;
 
-    // 🔥 FIX: Only update if data actually changed
     const chartData = validatedCandles.map(c => ({
       time: c.time as UTCTimestamp,
       open: c.open,
@@ -256,7 +245,6 @@ export default function ChartArea() {
     }));
     if (emaChartData.length) emaSeriesRef.current?.setData(emaChartData);
 
-    // Update legend
     const lastCandle = validatedCandles[validatedCandles.length - 1];
     const lastVolume = volumeData[volumeData.length - 1];
     if (lastCandle && lastVolume) {
@@ -271,7 +259,6 @@ export default function ChartArea() {
         isPriceUp: lastCandle.close >= lastCandle.open
       };
       
-      // Check if data actually changed
       const currentLegend = lastValidDataRef.current;
       if (!currentLegend || 
           currentLegend.open !== newLegend.open ||
@@ -286,14 +273,12 @@ export default function ChartArea() {
       }
     }
     
-    // 🔥 FIX: Only scroll to latest on initial load or when new data arrives
     if (!hasInitialDataRef.current && chartRef.current && validatedCandles.length > 0) {
       requestAnimationFrame(() => {
         if (chartRef.current) {
           chartRef.current.timeScale().fitContent();
         }
       });
-      // Flip the ref to true so this block never forces a snap-back again
       hasInitialDataRef.current = true; 
     }
   }, [candles, volumeData, ma50Data, ema20Data]);

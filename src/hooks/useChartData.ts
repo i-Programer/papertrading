@@ -52,7 +52,6 @@ export const CHART_PRESETS: ChartPreset[] = [
   { label: "5Y (1w)", rangeSeconds: 5 * 365 * 24 * 3600, granularity: 604800, interval: "1w", description: "5 years - 1 week candles" },
 ];
 
-// Helper: Deduplicate and sort candles
 const deduplicateAndSortCandles = (candles: CandleData[]): CandleData[] => {
   const uniqueMap = new Map<number, CandleData>();
   
@@ -108,13 +107,11 @@ export function useChartData(symbol: string, preset: ChartPreset) {
   const [legend, setLegend] = useState<LegendData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // 🔥 FIX: Use refs to prevent infinite loops
   const presetRef = useRef(preset);
   const symbolRef = useRef(symbol);
   const isUpdatingRef = useRef(false);
   const lastUpdateTimeRef = useRef(0);
   
-  // 🔥 FIX: Realtime candle builder dengan useRef
   const realtimeBuilderRef = useRef({
     lastCandleTime: null as number | null,
     lastOpen: 0,
@@ -123,13 +120,11 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     accumulatedVolume: 0,
   });
 
-  // Update refs ketika props berubah
   useEffect(() => {
     presetRef.current = preset;
     symbolRef.current = symbol;
   }, [preset, symbol]);
 
-  // 🔥 FIX: Effect untuk fetch history
   useEffect(() => {
     const fetchHistory = async () => {
       setIsLoading(true);
@@ -155,7 +150,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
 
         setCandles(uniqueCandles);
 
-        // Volume data
         const volumes = uniqueCandles.map((c) => ({
           time: c.time,
           value: c.volume,
@@ -163,14 +157,12 @@ export function useChartData(symbol: string, preset: ChartPreset) {
         }));
         setVolumeData(volumes);
 
-        // Indicators
         if (uniqueCandles.length >= 50) {
           const ma50 = calculateMA(uniqueCandles, 50);
           const ema20 = calculateEMA(uniqueCandles, 20);
           setMa50Data(ma50);
           setEma20Data(ema20);
           
-          // Legend
           const last = uniqueCandles[uniqueCandles.length - 1];
           const lastVol = volumes[volumes.length - 1];
           setLegend({
@@ -185,7 +177,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
           });
         }
         
-        // Reset realtime builder
         realtimeBuilderRef.current = {
           lastCandleTime: null,
           lastOpen: 0,
@@ -202,18 +193,15 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     };
 
     fetchHistory();
-  }, [symbol, preset.interval, preset.rangeSeconds]); // Remove fetchHistory from deps
+  }, [symbol, preset.interval, preset.rangeSeconds]); 
 
-  // 🔥 FIX: Stabilized handleRealtimeUpdate with throttling
   const handleRealtimeUpdate = useCallback((price: number, volume: number) => {
-    // Throttle updates to max 30 per second
     const now = Date.now();
     if (now - lastUpdateTimeRef.current < 33) {
-      return; // Skip if last update was less than 33ms ago
+      return; 
     }
     lastUpdateTimeRef.current = now;
     
-    // Prevent concurrent updates
     if (isUpdatingRef.current) return;
     isUpdatingRef.current = true;
     
@@ -229,7 +217,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
         const existingIndex = newCandles.findIndex(c => c.time === candleTimeStamp);
         
         if (existingIndex !== -1) {
-          // Update existing candle
           const existingCandle = newCandles[existingIndex];
           const updatedCandle = {
             ...existingCandle,
@@ -240,13 +227,11 @@ export function useChartData(symbol: string, preset: ChartPreset) {
           };
           newCandles[existingIndex] = updatedCandle;
           
-          // Update refs
           builder.lastOpen = existingCandle.open;
           builder.lastHigh = updatedCandle.high;
           builder.lastLow = updatedCandle.low;
           builder.accumulatedVolume = updatedCandle.volume;
         } else if (newCandles.length === 0 || candleTimeStamp > newCandles[newCandles.length - 1].time) {
-          // Create new candle
           const newCandle: CandleData = {
             time: candleTimeStamp,
             open: price,
@@ -267,7 +252,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
         return deduplicateAndSortCandles(newCandles);
       });
 
-      // Update legend separately to avoid re-triggering
       setLegend((prevLegend) => {
         if (!prevLegend) return prevLegend;
         return {
@@ -285,10 +269,8 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     }
   }, []);
 
-  // 🔥 FIX: Effect untuk update indicators - use requestAnimationFrame for batching
   useEffect(() => {
     if (candles.length >= 50) {
-      // Use requestAnimationFrame to batch updates and prevent loops
       const frameId = requestAnimationFrame(() => {
         const newMA = calculateMA(candles, 50);
         const newEMA = calculateEMA(candles, 20);
@@ -299,7 +281,6 @@ export function useChartData(symbol: string, preset: ChartPreset) {
     }
   }, [candles]);
 
-  // 🔥 FIX: Subscribe WebSocket - cleaned up
   useEffect(() => {
     const unsubscribe = wsManager.subscribe("ticker", (data: TickerMessage) => {
       if (data.product_id === symbol && data.price) {

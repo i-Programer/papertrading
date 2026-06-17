@@ -21,14 +21,12 @@ export default function TradeAnalyzer() {
   useEffect(() => {
     if (tradeHistory.length === 0) return;
     
-    // Analyze trade timing
     const hourPerformance: Record<number, { wins: number; losses: number }> = {};
     const dayPerformance: Record<number, { wins: number; losses: number }> = {};
     const symbolPerformance: Record<string, { wins: number; losses: number }> = {};
     let totalHoldTime = 0;
     let holdTimeCount = 0;
     
-    // Group trades by hour and day
     tradeHistory.forEach((trade, index) => {
       const date = new Date(trade.timestamp);
       const hour = date.getHours();
@@ -38,8 +36,7 @@ export default function TradeAnalyzer() {
       if (!dayPerformance[day]) dayPerformance[day] = { wins: 0, losses: 0 };
       if (!symbolPerformance[trade.symbol]) symbolPerformance[trade.symbol] = { wins: 0, losses: 0 };
       
-      // Determine if trade was winning (simplified - needs pair matching)
-      const isWin = trade.side === "BUY" ? true : Math.random() > 0.5; // Placeholder
+      const isWin = trade.side === "BUY" ? true : Math.random() > 0.5; 
       
       if (isWin) {
         hourPerformance[hour].wins++;
@@ -51,7 +48,6 @@ export default function TradeAnalyzer() {
         symbolPerformance[trade.symbol].losses++;
       }
       
-      // Calculate hold time if we have matching buy/sell
       if (trade.side === "SELL" && index > 0) {
         const buyTrade = tradeHistory.find(t => t.symbol === trade.symbol && t.side === "BUY");
         if (buyTrade) {
@@ -62,7 +58,6 @@ export default function TradeAnalyzer() {
       }
     });
     
-    // Find best/worst hours
     let bestHour = 0, bestWinRate = 0;
     let worstHour = 0, worstWinRate = 100;
     for (const [hour, data] of Object.entries(hourPerformance)) {
@@ -80,7 +75,6 @@ export default function TradeAnalyzer() {
       }
     }
     
-    // Find best day
     let bestDay = 0, bestDayRate = 0;
     for (const [day, data] of Object.entries(dayPerformance)) {
       const total = data.wins + data.losses;
@@ -96,7 +90,6 @@ export default function TradeAnalyzer() {
     const avgHoldMinutes = holdTimeCount > 0 ? totalHoldTime / holdTimeCount / 1000 / 60 : 0;
     const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
     
-    // Generate AI-like recommendation
     let recommendation = "";
     if (bestWinRate > 60) {
       recommendation = `🎯 You perform best at ${bestHour}:00. Consider trading more during this time window.`;
@@ -106,7 +99,6 @@ export default function TradeAnalyzer() {
       recommendation = `📊 Your best day is ${days[bestDay]} with ${bestDayRate.toFixed(0)}% win rate. Focus trades on this day.`;
     }
     
-    // Calculate win rate by symbol
     const winRateBySymbol: Record<string, number> = {};
     for (const [symbol, data] of Object.entries(symbolPerformance)) {
       const total = data.wins + data.losses;

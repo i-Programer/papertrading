@@ -1,3 +1,4 @@
+// src/components/AIPanel.tsx
 "use client";
 
 import { useState, useEffect } from "react";
@@ -22,7 +23,7 @@ interface Pattern {
 
 export default function AIPanel() {
   const { symbol, positions, balance, tradeHistory } = useTradingStore();
-  const { candles, isLoading } = useChartData(symbol, CHART_PRESETS[2]); // Use 3D preset
+  const { candles, isLoading } = useChartData(symbol, CHART_PRESETS[2]); 
   
   const [aiSignal, setAiSignal] = useState<AISignal | null>(null);
   const [patterns, setPatterns] = useState<Pattern[]>([]);
@@ -32,11 +33,9 @@ export default function AIPanel() {
   const [chatHistory, setChatHistory] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
   const [showAIPanel, setShowAIPanel] = useState(true);
 
-  // Calculate simple indicators
   const calculateIndicators = () => {
     if (candles.length < 20) return { rsi: null, macd: null, volumeChange: null };
     
-    // Simple RSI approximation
     const closes = candles.map(c => c.close);
     let gains = 0, losses = 0;
     for (let i = closes.length - 14; i < closes.length; i++) {
@@ -48,7 +47,6 @@ export default function AIPanel() {
     const avgLoss = losses / 14;
     const rsi = avgLoss === 0 ? 100 : 100 - (100 / (1 + avgGain / avgLoss));
     
-    // Volume change
     const avgVolumeLast5 = candles.slice(-5).reduce((s, c) => s + c.volume, 0) / 5;
     const avgVolumePrev5 = candles.slice(-10, -5).reduce((s, c) => s + c.volume, 0) / 5;
     const volumeChange = ((avgVolumeLast5 - avgVolumePrev5) / avgVolumePrev5) * 100;
@@ -61,7 +59,6 @@ export default function AIPanel() {
     const indicators = calculateIndicators();
     
     try {
-      // Get AI signal
       const signalRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/ai/signal`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -76,7 +73,6 @@ export default function AIPanel() {
       const signalData = await signalRes.json();
       if (signalData.success) setAiSignal(signalData.signal);
       
-      // Get pattern detection
       const patternRes = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/ai/patterns`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

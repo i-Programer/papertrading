@@ -1,3 +1,4 @@
+// src/components/AIPositionSizer.tsx
 "use client";
 
 import { useState } from "react";
@@ -18,28 +19,22 @@ export default function AIPositionSizer({ currentPrice }: { currentPrice: number
   const [sizing, setSizing] = useState<PositionSizing | null>(null);
   const [stopLoss, setStopLoss] = useState<number | null>(null);
 
-  // Kelly Criterion based position sizing (mathematical, not API-based)
   const calculatePositionSize = () => {
-    // Get recent win rate from trade history
     const { tradeHistory } = useTradingStore.getState();
-    const wins = tradeHistory.filter(t => t.side === "BUY").length; // Simplified
+    const wins = tradeHistory.filter(t => t.side === "BUY").length; 
     const total = tradeHistory.length || 1;
     const winRate = wins / total;
     
-    // Average win/loss ratio (simplified)
-    const avgWin = 0.02; // Assume 2% average win
-    const avgLoss = 0.01; // Assume 1% average loss
+    const avgWin = 0.02; 
+    const avgLoss = 0.01; 
     
-    // Kelly Formula: f* = (p*b - q)/b
     const b = avgWin / avgLoss;
     const p = winRate;
     const q = 1 - p;
     let kellyFraction = (p * b - q) / b;
     
-    // Cap Kelly at 25% for safety
     kellyFraction = Math.min(Math.max(kellyFraction, 0.05), 0.25);
     
-    // Adjust based on user risk preference
     const riskMultiplier = {
       conservative: 0.5,
       moderate: 1,
@@ -49,7 +44,7 @@ export default function AIPositionSizer({ currentPrice }: { currentPrice: number
     const finalFraction = kellyFraction * riskMultiplier;
     const recommendedAmount = balance.cash * finalFraction;
     const recommendedQuantity = recommendedAmount / currentPrice;
-    const maxLoss = recommendedAmount * 0.02; // 2% stop loss
+    const maxLoss = recommendedAmount * 0.02; 
     
     let reasoning = "";
     if (riskLevel === "conservative") {
@@ -69,11 +64,9 @@ export default function AIPositionSizer({ currentPrice }: { currentPrice: number
     });
   };
 
-  // Smart stop loss based on ATR (Average True Range)
   const calculateSmartStopLoss = (price: number, candles: any[]) => {
     if (candles.length < 14) return price * 0.95;
     
-    // Calculate ATR
     let atr = 0;
     for (let i = candles.length - 14; i < candles.length; i++) {
       const high = candles[i].high;
@@ -84,7 +77,6 @@ export default function AIPositionSizer({ currentPrice }: { currentPrice: number
     }
     atr /= 14;
     
-    // Stop loss at 2x ATR
     const stopPrice = price - (atr * 2);
     setStopLoss(stopPrice);
     return stopPrice;

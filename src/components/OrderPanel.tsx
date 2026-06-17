@@ -90,27 +90,21 @@ function PositionSizingCalculator({ currentPrice, balance, tradeHistory, onApply
   } | null>(null);
 
   const calculatePositionSize = () => {
-    // Calculate win rate from trade history
     const wins = tradeHistory.filter(t => {
-      // Simplified: assume BUY trades that are followed by higher price are wins
-      // For demo, using random but realistic calculation
       return Math.random() > 0.45;
     }).length;
     const total = tradeHistory.length || 1;
     const winRate = wins / total;
     
-    // Kelly Criterion: f* = (p*b - q)/b
-    const avgWin = 0.03; // Assume 3% average win
-    const avgLoss = 0.015; // Assume 1.5% average loss
+    const avgWin = 0.03; 
+    const avgLoss = 0.015; 
     const b = avgWin / avgLoss;
     const p = winRate;
     const q = 1 - p;
     let kellyFraction = (p * b - q) / b;
     
-    // Cap Kelly at 25% for safety
     kellyFraction = Math.min(Math.max(kellyFraction, 0.02), 0.25);
     
-    // Adjust based on user risk preference
     const riskMultiplier = {
       conservative: 0.5,
       moderate: 1,
@@ -120,7 +114,7 @@ function PositionSizingCalculator({ currentPrice, balance, tradeHistory, onApply
     const finalFraction = kellyFraction * riskMultiplier;
     const recommendedAmount = balance.cash * finalFraction;
     const recommendedQuantity = recommendedAmount / currentPrice;
-    const maxLoss = recommendedAmount * 0.02; // 2% stop loss
+    const maxLoss = recommendedAmount * 0.02; 
     
     let reasoning = "";
     if (riskLevel === "conservative") {
@@ -231,7 +225,6 @@ function SentimentIndicator({ symbol, currentPrice }: { symbol: string; currentP
 function TradeReasonDisplay({ reason, onDismiss }: { reason: string | null; onDismiss: () => void }) {
   if (!reason) return null;
   
-  // Determine icon based on reason content
   const isProfit = reason.includes("profit") || reason.includes("gain") || reason.includes("Take");
   const isLoss = reason.includes("loss") || reason.includes("stop") || reason.includes("Panic");
   const isBuy = reason.includes("Buy") || reason.includes("buy") || reason.includes("Dip");
@@ -287,14 +280,12 @@ export default function OrderPanel() {
     setIsMounted(true);
   }, []);
 
-  // Auto-set limit price when live price changes
   useEffect(() => {
     if (orderType === "LIMIT" && !limitPrice && livePrice) {
       setLimitPrice(livePrice.toFixed(2));
     }
   }, [livePrice, orderType, limitPrice]);
 
-  // Watch for new trade reasons
   useEffect(() => {
     if (lastTradeReason) {
       setCurrentTradeReason(lastTradeReason);
@@ -322,7 +313,6 @@ export default function OrderPanel() {
         alert("Please enter a valid limit price!");
         return;
       }
-      // Warn if limit price is far from market
       const priceDiff = Math.abs(executionPrice - livePrice) / livePrice;
       if (priceDiff > 0.1) {
         const confirmed = confirm(
@@ -366,12 +356,10 @@ export default function OrderPanel() {
   const quickAmounts: number[] = [0.1, 0.5, 1.0, 2.0, 5.0];
   const filteredHistory = tradeHistory.filter((log) => log.symbol === symbol).slice(0, 5);
 
-  // Apply position size to quantity
   const handleApplySize = (qty: number) => {
     setQuantity(qty.toFixed(4));
   };
 
-  // Price impact calculation
   const priceImpact = (): number => {
     const qty = parseFloat(quantity);
     if (isNaN(qty) || qty <= 0) return 0;

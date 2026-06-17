@@ -30,24 +30,23 @@ export default function LoginPage() {
               path="/login"
               appearance={{
                 variables: {
-                  // --- PROPERTI BARU (WAJIB PAKAI INI) ---
-                  colorPrimary: "#3b82f6",        // Warna biru untuk tombol
-                  colorPrimaryForeground: "#ffffff", // Warna TEKS di tombol
+                  colorPrimary: "#3b82f6",        
+                  colorPrimaryForeground: "#ffffff", 
                   
-                  colorBackground: "#1e293b",     // Latar belakang card (slate-800)
-                  colorForeground: "#f1f5f9",     // Warna TEKS UTAMA (putih)
-                  colorMutedForeground: "#94a3b8", // Warna teks sekunder (abu-abu terang)
+                  colorBackground: "#1e293b",     
+                  colorForeground: "#f1f5f9",     
+                  colorMutedForeground: "#94a3b8", 
                   
-                  colorInput: "#0f172a",          // Latar belakang INPUT (slate-900)
-                  colorInputForeground: "#f1f5f9", // Warna TEKS di dalam INPUT (putih)
+                  colorInput: "#0f172a",          
+                  colorInputForeground: "#f1f5f9", 
                   
-                  colorBorder: "#334155",         // Warna border (slate-700)
-                  colorDanger: "#ef4444",         // Warna untuk pesan error
-                  borderRadius: "0.5rem",         // Radius border
+                  colorBorder: "#334155",         
+                  colorDanger: "#ef4444",         
+                  borderRadius: "0.5rem",         
                 },
                 elements: {
-                  card: "shadow-none",             // Hilangkan shadow bawaan
-                  header: "hidden",                // Sembunyikan header bawaan
+                  card: "shadow-none",             
+                  header: "hidden",                
                   formButtonPrimary: "bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5",
                   formFieldInput: "border border-slate-700 focus:ring-2 focus:ring-blue-500",
                   formFieldLabel: "text-slate-300 font-medium",

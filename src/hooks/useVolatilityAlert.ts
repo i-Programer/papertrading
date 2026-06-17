@@ -16,27 +16,24 @@ export function useVolatilityAlert(symbol: string, currentPrice: number, candles
     if (candles.length < 20) return;
     
     const now = Date.now();
-    if (now - lastAlertTime.current < 60000) return; // Max 1 alert per minute
+    if (now - lastAlertTime.current < 60000) return; 
     
     const recentCandles = candles.slice(-20);
     const prices = recentCandles.map(c => c.close);
     const volumes = recentCandles.map(c => c.volume);
     
-    // Calculate volatility (standard deviation of returns)
     const returns = [];
     for (let i = 1; i < prices.length; i++) {
       returns.push((prices[i] - prices[i-1]) / prices[i-1]);
     }
     const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
     const variance = returns.reduce((sum, r) => sum + Math.pow(r - avgReturn, 2), 0) / returns.length;
-    const volatility = Math.sqrt(variance) * Math.sqrt(365 * 24); // Annualized
+    const volatility = Math.sqrt(variance) * Math.sqrt(365 * 24); 
     
-    // Volume anomaly detection
     const avgVolume = volumes.slice(0, -1).reduce((a, b) => a + b, 0) / (volumes.length - 1);
     const currentVolume = volumes[volumes.length - 1];
     const volumeRatio = currentVolume / avgVolume;
     
-    // Find support/resistance (simplified)
     const highs = recentCandles.map(c => c.high);
     const lows = recentCandles.map(c => c.low);
     const resistance = Math.max(...highs.slice(0, -5));
@@ -44,8 +41,7 @@ export function useVolatilityAlert(symbol: string, currentPrice: number, candles
     
     const newAlerts: VolatilityAlert[] = [];
     
-    // Check for high volatility
-    if (volatility > 0.8) { // 80% annualized volatility
+    if (volatility > 0.8) { 
       newAlerts.push({
         type: "HIGH_VOLATILITY",
         message: `⚠️ High volatility detected! ${symbol} is moving aggressively. Consider reducing position size.`,
@@ -54,7 +50,6 @@ export function useVolatilityAlert(symbol: string, currentPrice: number, candles
       });
     }
     
-    // Check for volume spike
     if (volumeRatio > 2.5) {
       newAlerts.push({
         type: "UNUSUAL_VOLUME",
@@ -64,7 +59,6 @@ export function useVolatilityAlert(symbol: string, currentPrice: number, candles
       });
     }
     
-    // Check support/resistance breach
     if (currentPrice < support * 0.98) {
       newAlerts.push({
         type: "SUPPORT_BREACH",
@@ -85,8 +79,6 @@ export function useVolatilityAlert(symbol: string, currentPrice: number, candles
       setAlerts(prev => [...newAlerts, ...prev].slice(0, 10));
       lastAlertTime.current = now;
       
-      // Play sound? (optional)
-      // new Audio('/alert.mp3').play();
     }
   }, [currentPrice, candles, symbol]);
   
